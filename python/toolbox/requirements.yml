@@ -1,0 +1,19 @@
+name: audio
+channels:
+  - defaults
+dependencies:
+  - python=3.7
+  - pytorch
+  - torchvision
+  - torchaudio
+  - librosa
+  - seaborn
+  - pyyaml
+  - tqdm
+  - jupyterlab
+  - addict
+  - easydict
+  - h5py
+  - tensorboard
+  - ipywidgets
+prefix: /Users/falconr1/opt/anaconda3/envs/audio
