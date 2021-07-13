@@ -254,22 +254,8 @@ class PreprocessRIR_new(nn.Module):
         self.filterbank = FilterByOctaves(center_freqs=filter_frequencies, order=3, fs=self.sample_rate, backend='scipy')
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Filter
-        out = self.filterbank(x)
-
-        # Backwards integral
-        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
-        out = _cumtrapz(out[..., reverse_index] ** 2, device=out.device)
-        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
-        out = out[..., reverse_index]
-
-        # Normalize to 1
-        out = out / torch.max(out, dim=-1, keepdim=True).values  # per channel
-        #out = out / torch.max(torch.max(out, dim=-1, keepdim=True).values, dim=-2, keepdim=True).values
-
-        # Discard last 5%
-        last_id = int(np.round(0.95 * out.shape[-1]))
-        out = out[..., 0:last_id]
+        out = self.schroeder(x)
+        out = self.discard_last5(out)
 
         # Discard all beyond -140
         # TODO: I am skipping this part due to tensor processing
@@ -280,15 +266,11 @@ class PreprocessRIR_new(nn.Module):
 
         # Convert to dB
         out = 10 * torch.log10(out + self.eps)
-        # Clamp to -100 dB
+        # Clamp to -140 dB
         out = torch.clamp_min(out, -140)
 
-        #out = 20 * torch.log10(out + self.eps)
         if self.normalization:
             # TODO This is not working correctly
-            # out = 10 * torch.log10(out)
-            # out = out / torch.max(out.abs(), dim=-1, keepdim=True).values  # per channel
-            out = out * 2
             out = 2 * out / self.input_transform["edcs_db_normfactor"]
             out = out + 1
 
@@ -306,14 +288,34 @@ class PreprocessRIR_new(nn.Module):
                 trimmed_sigs.append(tmp.squeeze(0))
             out = torch.stack(trimmed_sigs, dim=-2)
 
-
-
-
-
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
         out = out.view(-1, out.shape[-1]).type(torch.float32)
 
         return out
+
+    def schroeder(self, rir: torch.Tensor) -> torch.Tensor:
+        # Filter
+        out = self.filterbank(rir)
+
+        # Backwards integral
+        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
+        out = _cumtrapz(out[..., reverse_index] ** 2, device=out.device)
+        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
+        out = out[..., reverse_index]
+
+        # Normalize to 1
+        out = out / torch.max(out, dim=-1, keepdim=True).values  # per channel
+        # out = out / torch.max(torch.max(out, dim=-1, keepdim=True).values, dim=-2, keepdim=True).values
+
+        return out
+
+    def discard_last5(self, edc: torch.Tensor) -> torch.Tensor:
+        # Discard last 5%
+        last_id = int(np.round(0.95 * edc.shape[-1]))
+        out = edc[..., 0:last_id]
+
+        return out
+
 
 
 class PreprocessRIR(nn.Module):

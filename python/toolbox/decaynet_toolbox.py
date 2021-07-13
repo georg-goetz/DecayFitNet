@@ -35,7 +35,7 @@ class DecaynetToolbox():
     filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
     __version = '0.0.3'
 
-    def __init__(self, sample_rate: int = 48000,  normalization: bool = True, backend: str ='pytorch'):
+    def __init__(self, sample_rate: int = 48000,  normalization: bool = True, backend: str = 'pytorch'):
         self.backend = backend
         self.fs = sample_rate
         self.normalization = normalization
@@ -132,8 +132,8 @@ class DecaynetToolbox():
         out = []
         if len(estimated_T.shape) > 1:
             for idx in range(estimated_T.shape[0]):
-                tmp = generate_synthetic_edc(T=estimated_T[idx:idx+1,:],
-                                             A=estimated_A[idx:idx+1,:],
+                tmp = generate_synthetic_edc(T=estimated_T[idx:idx+1, :],
+                                             A=estimated_A[idx:idx+1, :],
                                              noiseLevel=estimated_n_fixed[idx],
                                              t=time_axis,
                                              device=device)
