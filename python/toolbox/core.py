@@ -5,6 +5,7 @@ import scipy
 import scipy.stats
 import scipy.signal
 import numpy as np
+import matplotlib.pyplot as plt
 from typing import Iterable, Tuple, TypeVar, Callable, Any, List, T, Dict
 T = TypeVar('T', bound=Callable[..., Any])
 
@@ -90,7 +91,7 @@ class FilterByOctaves(nn.Module):
     This is useful to get the decay curves of RIRs.
     """
 
-    def __init__(self, center_freqs=[250, 500, 1000, 2000, 4000, 8000], order=3, fs=48000, backend='scipy'):
+    def __init__(self, center_freqs=[125, 250, 500, 1000, 2000, 4000], order=3, fs=48000, backend='scipy'):
         super(FilterByOctaves, self).__init__()
 
         self.center_freqs = center_freqs
@@ -109,8 +110,8 @@ class FilterByOctaves(nn.Module):
             tmp = torch.clone(x)
             for jj in range(this_sos.shape[0]):
                 tmp = torchaudio.functional.biquad(tmp,
-                                                   b0=this_sos[jj,0], b1=this_sos[jj,1], b2=this_sos[jj,2],
-                                                   a0=this_sos[jj,3], a1=this_sos[jj,4], a2=this_sos[jj,5])
+                                                   b0=this_sos[jj, 0], b1=this_sos[jj, 1], b2=this_sos[jj, 2],
+                                                   a0=this_sos[jj, 3], a1=this_sos[jj, 4], a2=this_sos[jj, 5])
             out.append(torch.clone(tmp))
         out = torch.stack(out, dim=-2)  # Stack over frequency bands
 
@@ -270,23 +271,8 @@ class PreprocessRIR_new(nn.Module):
         out = torch.clamp_min(out, -140)
 
         if self.normalization:
-            # TODO This is not working correctly
             out = 2 * out / self.input_transform["edcs_db_normfactor"]
             out = out + 1
-
-        else:
-            # For each freq, discard all samples that are > -5dB
-            # Then resample again to make sure there are 2400 samples
-            trimmed_sigs = []
-            for freq in range(out.shape[-2]):
-                tmp = out[..., freq, :]
-                ids = (tmp >= -5).nonzero(as_tuple=True)
-                tmp = tmp[..., ids[-1][-1]::]
-                tmp = torch.nn.functional.interpolate(tmp.unsqueeze(0), size=self.output_size, scale_factor=None, mode='linear',
-                                                      align_corners=False, recompute_scale_factor=None)
-                tmp = tmp / tmp.abs().max() + 1
-                trimmed_sigs.append(tmp.squeeze(0))
-            out = torch.stack(trimmed_sigs, dim=-2)
 
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
         out = out.view(-1, out.shape[-1]).type(torch.float32)
@@ -313,72 +299,6 @@ class PreprocessRIR_new(nn.Module):
         # Discard last 5%
         last_id = int(np.round(0.95 * edc.shape[-1]))
         out = edc[..., 0:last_id]
-
-        return out
-
-
-
-class PreprocessRIR(nn.Module):
-    """ Preprocess a RIR (audio tensor) to exract the EDC and prepare for the neural network model
-        The preprocessing includes:
-
-        # 	Filter bank
-        # 	Backwards integration (cut arway at -140 db)
-        # 	Downsampling to 2400 samples  (pad with last value)
-        # 	Ampltiude2DB
-        # 	Zero mean/unit variance normalization (with training data parameters)
-        #   Reshaping freq bands to batch size.
-
-        Attributes
-        ----------
-        says_str : str
-            a formatted string to print out what the animal says
-
-        """
-    def __init__(self,
-                 normalization_means: torch.Tensor,
-                 normalization_var: torch.Tensor,
-                 normalization: bool = True,
-                 sample_rate: int = 48000,
-                 filter_frequencies: List[int] = [250, 500, 1000, 2000, 4000, 8000], output_size: int = 2400):
-        super(PreprocessRIR, self).__init__()
-        self.normalization_means = normalization_means
-        self.normalization_var = normalization_var
-        self.filter_frequencies = filter_frequencies
-        self.output_size = output_size
-        self.sample_rate = sample_rate
-        self.normalization = normalization
-
-        self.filterbank = FilterByOctaves(center_freqs=filter_frequencies, order=3, fs=self.sample_rate, backend='scipy')
-        if self.normalization:
-            self.nomalizer = Normalizer(means=self.normalization_means, stds=self.normalization_var)  # TODO: is this variance or std
-        else:
-            self.nomalizer = torch.nn.Identity()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Filter
-        out = self.filterbank(x)
-
-        # Reverse backwards integral
-        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
-        out = _cumtrapz(out[..., reverse_index] ** 2, device=out.device)
-
-        # Convert to dB and reverse
-        out = 10 * torch.log10(out)
-        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
-        out = out - torch.max(out, dim=-1, keepdim=True).values
-        out = out[..., reverse_index]
-        out = torch.clamp_min(out, -100)
-
-        # Downsample
-        out = torch.nn.functional.interpolate(out, size=self.output_size, scale_factor=None, mode='linear',
-                                              align_corners=False, recompute_scale_factor=None)
-
-        # Normalize
-        out = self.nomalizer(out)
-
-        # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
-        out = out.view(-1, out.shape[-1]).type(torch.float32)
 
         return out
 

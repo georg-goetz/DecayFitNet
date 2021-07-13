@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 from typing import Union, List
 
-from core import PreprocessRIR, PreprocessRIR_new, generate_synthetic_edc
+from core import PreprocessRIR_new, generate_synthetic_edc
 
 
 class DecaynetToolbox():

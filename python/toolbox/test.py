@@ -10,28 +10,29 @@ from decaynet_toolbox import DecaynetToolbox
 import core
 
 
-EVAL_TYPE = 'roomtransition'
-#EVAL_TYPE = 'motus'
-DATA_PATH = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/decayfit_toolbox'
+# EVAL_TYPE = 'roomtransition'
+EVAL_TYPE = 'motus'
+# DATA_PATH = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/decayfit_toolbox'
+DATA_PATH = '/Volumes/ARTSRAM/AkuLab_Datasets'
 
-AUDIO_EXTENSIONS = ['.mp3', '.wav']
+AUDIO_EXTENSIONS = ['.wav']
 
 
 def is_audio_file(filename):
     filename_lower = filename.lower()
-    return any(filename_lower.endswith(ext) for ext in AUDIO_EXTENSIONS)
+    return any((filename_lower.endswith(ext) and not filename_lower.startswith('.')) for ext in AUDIO_EXTENSIONS)
 
 
 def make_dataset(dir):
-    audio = []
+    audio_files = []
 
     for root, _, fnames in sorted(os.walk(dir)):
         for fname in sorted(fnames):
             if is_audio_file(fname):
                 path = os.path.join(root, fname)
-                audio.append(path)
+                audio_files.append(path)
 
-    return audio
+    return audio_files
 
 
 class RirDataset(Dataset):
@@ -40,42 +41,42 @@ class RirDataset(Dataset):
     def __init__(self, data_path: str, transform=None):
         print(f"Reading fnames in path {data_path}.")
         assert os.path.exists(data_path), 'ERROR: Data path does not exist.'
-        audios = make_dataset(data_path)
-        if len(audios) == 0:
-            raise(RuntimeError("Found 0 audios in subfolders of: " + data_path + "\n"
+        audio_files = make_dataset(data_path)
+        if len(audio_files) == 0:
+            raise(RuntimeError("Found 0 audio files in subfolders of: " + data_path + "\n"
                                "Supported audio extensions are: " + ",".join(AUDIO_EXTENSIONS)))
 
         self.data_path = data_path
-        self.audios = audios
+        self.audio_files = audio_files
         self.transform = transform
 
     def __len__(self):
-        return len(self.audios)
+        return len(self.audio_files)
 
     def __getitem__(self, index):
-        path = self.audios[index]
+        path = self.audio_files[index]
         audio, _ = torchaudio.load(path)
-        if audio.shape[0] > 1:  # load a single channel
-            audio = audio[0,:]
+        if audio.shape[0] > 1:  # load the omni channel
+            audio = audio[0, :]
         if self.transform is not None:
             audio = self.transform(audio)
 
         return audio
 
 
-def test_fit_precomputedEDCs(data_path: str, dataset : str = 'motus'):
+def test_fit_precomputedEDCs():
     """ Test the fit of the pre trained DecayFitNet to one of the test datasets."""
     # Prepare the model
     decaynet = DecaynetToolbox(sample_rate=48000, normalization=True)
 
     # Process
-    if dataset == 'motus':
-        f_edcs = h5py.File(os.path.join(data_path, 'summer830', 'edcs.mat'), 'r')
+    if EVAL_TYPE == 'motus':
+        f_edcs = h5py.File(os.path.join(DATA_PATH, 'summer830', 'edcs.mat'), 'r')
         edcs = torch.from_numpy(np.array(f_edcs.get('summer830edcs/edcs'))).float().view(-1, 2400)
 
         n_batches = 240
         batch_size = 83
-    elif dataset == 'roomtransition':
+    elif EVAL_TYPE == 'roomtransition':
         f_edcs = h5py.File(os.path.join(DATA_PATH, 'roomtransition', 'edcs.mat'), 'r')
         edcs = torch.from_numpy(np.array(f_edcs.get('roomTransitionEdcs/edcs'))).float().view(-1, 2400)  # range [0,1]
 
@@ -87,18 +88,19 @@ def test_fit_precomputedEDCs(data_path: str, dataset : str = 'motus'):
     with torch.no_grad():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Normalize precomputed EDCs
+        # Normalize precomputed EDCs: normalized result will be [-inf, 1], and unless the RIR has very small values
+        # (<-120dB), it will be somewhere between [-1, 1]. For noisy RIRs, min(edcs_normalized) can still be closer
+        # to 0, i.e., it doesn't need to be exactly -1
         edcs_db = 10*torch.log10(edcs)
         edcs_normalized = 2 * edcs_db / decaynet.input_transform["edcs_db_normfactor"]
         edcs_normalized += 1
 
-        # TODO: for Georg: edcs_normalized are in the [0, 1] range, and not [-1, 1]. is this ok?
         assert torch.all(torch.min(edcs) >= 0 and torch.max(edcs) <= 2), \
             "Range for raw linear EDCs should be [0,1]"  # range [0,1]
         assert torch.all(torch.max(edcs_db) <= 0), \
             "Range for EDCs in dB should be [-inf, 0]"
-        assert torch.all(torch.max(edcs_normalized) <= 1 and torch.min(edcs_normalized) >= -1), \
-            "Range for EDCs in dB should be [-inf, 0]"
+        assert torch.all(torch.max(edcs_normalized) <= 1), \
+            "Range for EDCs in dB should be [-inf, 0]"  # usually somewhere between [-1, 1], but cannot be enforced
 
         all_mse = torch.Tensor([])
         edcMSELoss = 0
@@ -116,23 +118,21 @@ def test_fit_precomputedEDCs(data_path: str, dataset : str = 'motus'):
             mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
             a_prediction[~mask] = 0
 
-            thisLoss = core.edc_loss(t_prediction, a_prediction, n_prediction, these_edcs, device,
-                                            training_flag=False)
+            thisLoss = core.edc_loss(t_prediction, a_prediction, n_prediction, these_edcs, device, training_flag=False)
 
             print('Batch {}/{} [{:.2f} %] -- \t EDC Loss: {:.2f} dB'.format(idx, n_batches, 100*idx/n_batches,
                                                                             thisLoss))
 
             edcMSELoss += (1 / n_batches) * thisLoss
 
-            this_loss_edcwise = torch.mean(core.edc_loss(t_prediction, a_prediction, n_prediction,
-                                                                these_edcs, device, training_flag=False,
-                                                                apply_mean=False), 1)
+            this_loss_edcwise = torch.mean(core.edc_loss(t_prediction, a_prediction, n_prediction, these_edcs, device,
+                                                         training_flag=False, apply_mean=False), 1)
 
             all_mse = torch.cat((all_mse, this_loss_edcwise), 0)
 
         print('MSE loss on {}: {} dB'.format(EVAL_TYPE, edcMSELoss))
 
-        assert torch.mean(all_mse) < 1, "The mean error should be > 1 dB"
+        assert torch.mean(all_mse) < 1, "The mean error should be < 1 dB"
 
         import seaborn as sns
         p = sns.boxplot(data=all_mse.numpy())
@@ -142,35 +142,52 @@ def test_fit_precomputedEDCs(data_path: str, dataset : str = 'motus'):
         print('Test finished succesfully.')
 
 
-def test_fit_preprocessEDCs(dataset : str = 'motus'):
+def test_fit_preprocessEDCs():
     """ Test the fit of the pre trained DecayFitNet to one of the test datasets, doing the preprocessing."""
     # Prepare the model
     decaynet = DecaynetToolbox(sample_rate=48000, normalization=True)
 
-    # Process
-    if dataset == 'motus':
-        data_path = '/m/triton/scratch/elec/t40527-hybridacoustics/datasets/summer830/raw_rirs'
-
-    elif dataset == 'roomtransition':
-        raise NotImplementedError()
+    if EVAL_TYPE == 'motus':
+        data_path = os.path.join(DATA_PATH, 'summer830', 'raw_rirs')
+    elif EVAL_TYPE == 'roomtransition':
+        data_path = os.path.join(DATA_PATH, 'roomtransition', 'Wav Files')
     else:
         raise NotImplementedError()
 
     with torch.no_grad():
         dataset = RirDataset(data_path=data_path)
-        loader = DataLoader(dataset, batch_size=100, shuffle=False, num_workers=4)
+        num_workers = 4 if torch.cuda.is_available() else 0
+        loader = DataLoader(dataset, batch_size=100, shuffle=False, num_workers=num_workers)
         n_batches = len(loader)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         all_mse = torch.Tensor([])
         edcMSELoss = 0
         for idx, rir in enumerate(loader):
-            rir_preprocess = decaynet.preprocess(rir.to(device))
+            # Room transition dataset has a fade-out window of 0.1s, which must be removed before the fitting
+            if EVAL_TYPE == 'roomtransition':
+                rir = rir[:, 0:round(-0.1*48000)]
 
-            assert not torch.any(torch.isnan(rir_preprocess)), "Nan after pre processing"
-            assert not torch.any(torch.isinf(rir_preprocess)), "Inf after pre processing"
+            # This is the fully preprocessed (Octave-band filtering, normalization, downsampling) EDC, which is used as
+            # the input of the network
+            edcs_preprocessed = decaynet.preprocess(rir.to(device))
+            assert not torch.any(torch.isnan(edcs_preprocessed)), "Nan after pre processing"
+            assert not torch.any(torch.isinf(edcs_preprocessed)), "Inf after pre processing"
 
-            prediction = decaynet.estimate_parameters(rir_preprocess, do_preprocess=False)
+            # Additionally, we need the unnormalized EDCs to compare the fitting result against
+            # 1) Schroeder integration
+            edcs_unnormalized = decaynet._preprocess.schroeder(rir.to(device))
+            # 2) Discard last 5 percent of EDC
+            edcs_unnormalized = decaynet._preprocess.discard_last5(edcs_unnormalized)
+            # 3) Downsample
+            edcs_unnormalized = torch.nn.functional.interpolate(edcs_unnormalized, size=2400, scale_factor=None,
+                                                                mode='linear', align_corners=False,
+                                                                recompute_scale_factor=None)
+            # 4) reshape like the prediction
+            edcs_unnormalized = edcs_unnormalized.view(-1, 2400)
+
+            # do prediction with network
+            prediction = decaynet.estimate_parameters(edcs_preprocessed, do_preprocess=False)
             t_prediction, a_prediction, n_prediction, n_slopes_probabilities = prediction[0].to(device), \
                                                                                prediction[1].to(device), \
                                                                                prediction[2].to(device), \
@@ -183,11 +200,9 @@ def test_fit_preprocessEDCs(dataset : str = 'motus'):
             mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
             a_prediction[~mask] = 0
 
-            # TODO: for some reason the true edcs (rir_preprocess) have negative values so the db part is nan
-            # So I corrct with a modifier
-            debug_modifier = 2
-            thisLoss = core.edc_loss(t_prediction, a_prediction, n_prediction, rir_preprocess.to(device) + debug_modifier, device,
-                                            training_flag=False)
+            # Compare the fitting result with the unnormalized EDCs
+            thisLoss = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs_unnormalized, device,
+                                     training_flag=False)
 
             print('Batch {}/{} [{:.2f} %] -- \t EDC Loss: {:.2f} dB'.format(idx, n_batches, 100*idx/n_batches,
                                                                             thisLoss))
@@ -195,8 +210,8 @@ def test_fit_preprocessEDCs(dataset : str = 'motus'):
             edcMSELoss += (1 / n_batches) * thisLoss
 
             this_loss_edcwise = torch.mean(core.edc_loss(t_prediction, a_prediction, n_prediction,
-                                                                rir_preprocess.to(device) + debug_modifier, device, training_flag=False,
-                                                                apply_mean=False), 1)
+                                                         edcs_unnormalized, device, training_flag=False,
+                                                         apply_mean=False), 1)
 
             all_mse = torch.cat((all_mse.detach().cpu(), this_loss_edcwise.detach().cpu()), 0)
 
@@ -212,10 +227,6 @@ def test_fit_preprocessEDCs(dataset : str = 'motus'):
         print('Test finished succesfully.')
 
 
-def run_all_tests():
-    test_fit_precomputedEDCs(data_path=DATA_PATH, dataset='roomtransition')
-    test_fit_precomputedEDCs(data_path=DATA_PATH, dataset='motus')
-
 def helper():
     """ This is just a helper function to debug. Nothing important to see here. """
     from utils import plot_waveform
@@ -228,7 +239,7 @@ def helper():
 
 
 if __name__ == '__main__':
-    #test_fit_precomputedEDCs(data_path=DATA_PATH, dataset=EVAL_TYPE)
-    test_fit_preprocessEDCs(dataset='motus')
+    test_fit_precomputedEDCs()
+    test_fit_preprocessEDCs()
 
 
