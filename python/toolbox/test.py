@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 from decaynet_toolbox import DecaynetToolbox
 import core
 
-
 # EVAL_TYPE = 'roomtransition'
 EVAL_TYPE = 'motus'
 # DATA_PATH = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/decayfit_toolbox'
@@ -43,8 +42,9 @@ class RirDataset(Dataset):
         assert os.path.exists(data_path), 'ERROR: Data path does not exist.'
         audio_files = make_dataset(data_path)
         if len(audio_files) == 0:
-            raise(RuntimeError("Found 0 audio files in subfolders of: " + data_path + "\n"
-                               "Supported audio extensions are: " + ",".join(AUDIO_EXTENSIONS)))
+            raise (RuntimeError("Found 0 audio files in subfolders of: " + data_path + "\n"
+                                                                                       "Supported audio extensions are: " + ",".join(
+                AUDIO_EXTENSIONS)))
 
         self.data_path = data_path
         self.audio_files = audio_files
@@ -66,8 +66,10 @@ class RirDataset(Dataset):
 
 def test_fit_precomputedEDCs():
     """ Test the fit of the pre trained DecayFitNet to one of the test datasets."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # Prepare the model
-    decaynet = DecaynetToolbox(sample_rate=48000, normalization=True)
+    decaynet = DecaynetToolbox(sample_rate=48000, normalization=True, device=device)
 
     # Process
     if EVAL_TYPE == 'motus':
@@ -86,12 +88,10 @@ def test_fit_precomputedEDCs():
         raise NotImplementedError()
 
     with torch.no_grad():
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         # Normalize precomputed EDCs: normalized result will be [-inf, 1], and unless the RIR has very small values
         # (<-120dB), it will be somewhere between [-1, 1]. For noisy RIRs, min(edcs_normalized) can still be closer
         # to 0, i.e., it doesn't need to be exactly -1
-        edcs_db = 10*torch.log10(edcs)
+        edcs_db = 10 * torch.log10(edcs)
         edcs_normalized = 2 * edcs_db / decaynet.input_transform["edcs_db_normfactor"]
         edcs_normalized += 1
 
@@ -105,22 +105,20 @@ def test_fit_precomputedEDCs():
         all_mse = torch.Tensor([])
         edcMSELoss = 0
         for idx in range(n_batches):
-            these_edcs = edcs[idx*batch_size:(idx+1)*batch_size, :]
+            these_edcs = edcs[idx * batch_size:(idx + 1) * batch_size, :]
             these_edcs_normalized = edcs_normalized[idx * batch_size:(idx + 1) * batch_size, :]
 
-            prediction = decaynet.estimate_parameters(these_edcs_normalized, do_preprocess=False)
-            t_prediction, a_prediction, n_prediction, n_slopes_probabilities = prediction[0], prediction[1], prediction[2], prediction[3]
+            prediction = decaynet.estimate_parameters(these_edcs_normalized, do_preprocess=False,
+                                                      do_scale_adjustment=False)
+            t_prediction, a_prediction, n_prediction = prediction[0], prediction[1], prediction[2]
 
-            # Only use the number of slopes that were predicted, zero others
-            _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
-            n_slopes_prediction += 1
-            temp = torch.linspace(1, 3, 3).repeat(n_slopes_prediction.shape[0], 1).to(device)
-            mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
-            a_prediction[~mask] = 0
+            # Write arbitary number (1) into T values that are equal to zero (inactive slope), because their amplitude
+            # will be 0 as well (i.e. they don't contribute to the EDC)
+            t_prediction[t_prediction == 0] = 1
 
             thisLoss = core.edc_loss(t_prediction, a_prediction, n_prediction, these_edcs, device, training_flag=False)
 
-            print('Batch {}/{} [{:.2f} %] -- \t EDC Loss: {:.2f} dB'.format(idx, n_batches, 100*idx/n_batches,
+            print('Batch {}/{} [{:.2f} %] -- \t EDC Loss: {:.2f} dB'.format(idx, n_batches, 100 * idx / n_batches,
                                                                             thisLoss))
 
             edcMSELoss += (1 / n_batches) * thisLoss
@@ -144,8 +142,9 @@ def test_fit_precomputedEDCs():
 
 def test_fit_preprocessEDCs():
     """ Test the fit of the pre trained DecayFitNet to one of the test datasets, doing the preprocessing."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Prepare the model
-    decaynet = DecaynetToolbox(sample_rate=48000, normalization=True)
+    decaynet = DecaynetToolbox(sample_rate=48000, normalization=True, device=device)
 
     if EVAL_TYPE == 'motus':
         data_path = os.path.join(DATA_PATH, 'summer830', 'raw_rirs')
@@ -159,14 +158,13 @@ def test_fit_preprocessEDCs():
         num_workers = 4 if torch.cuda.is_available() else 0
         loader = DataLoader(dataset, batch_size=100, shuffle=False, num_workers=num_workers)
         n_batches = len(loader)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         all_mse = torch.Tensor([])
         edcMSELoss = 0
         for idx, rir in enumerate(loader):
             # Room transition dataset has a fade-out window of 0.1s, which must be removed before the fitting
             if EVAL_TYPE == 'roomtransition':
-                rir = rir[:, 0:round(-0.1*48000)]
+                rir = rir[:, 0:round(-0.1 * 48000)]
 
             # This is the fully preprocessed (Octave-band filtering, normalization, downsampling) EDC, which is used as
             # the input of the network
@@ -187,24 +185,20 @@ def test_fit_preprocessEDCs():
             edcs_unnormalized = edcs_unnormalized.view(-1, 2400)
 
             # do prediction with network
-            prediction = decaynet.estimate_parameters(edcs_preprocessed, do_preprocess=False)
-            t_prediction, a_prediction, n_prediction, n_slopes_probabilities = prediction[0].to(device), \
-                                                                               prediction[1].to(device), \
-                                                                               prediction[2].to(device), \
-                                                                               prediction[3].to(device)
+            prediction = decaynet.estimate_parameters(edcs_preprocessed, do_preprocess=False, do_scale_adjustment=False)
+            t_prediction, a_prediction, n_prediction = prediction[0].to(device), \
+                                                       prediction[1].to(device), \
+                                                       prediction[2].to(device)
 
-            # Only use the number of slopes that were predicted, zero others
-            _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
-            n_slopes_prediction += 1
-            temp = torch.linspace(1, 3, 3).repeat(n_slopes_prediction.shape[0], 1).to(device)
-            mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
-            a_prediction[~mask] = 0
+            # Write arbitary number (1) into T values that are equal to zero (inactive slope), because their amplitude
+            # will be 0 as well (i.e. they don't contribute to the EDC)
+            t_prediction[t_prediction == 0] = 1
 
             # Compare the fitting result with the unnormalized EDCs
             thisLoss = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs_unnormalized, device,
                                      training_flag=False)
 
-            print('Batch {}/{} [{:.2f} %] -- \t EDC Loss: {:.2f} dB'.format(idx, n_batches, 100*idx/n_batches,
+            print('Batch {}/{} [{:.2f} %] -- \t EDC Loss: {:.2f} dB'.format(idx, n_batches, 100 * idx / n_batches,
                                                                             thisLoss))
 
             edcMSELoss += (1 / n_batches) * thisLoss
@@ -230,7 +224,7 @@ def test_fit_preprocessEDCs():
 def helper():
     """ This is just a helper function to debug. Nothing important to see here. """
     from utils import plot_waveform
-    fs = 48000 # 24000
+    fs = 48000  # 24000
 
     # plot_waveform(x, fs)
     plot_waveform(edcs[0:6, :].unsqueeze(0), fs)
@@ -241,5 +235,3 @@ def helper():
 if __name__ == '__main__':
     test_fit_precomputedEDCs()
     test_fit_preprocessEDCs()
-
-

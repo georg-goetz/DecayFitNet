@@ -38,36 +38,35 @@ if fadeout_length > 0:
 # Prepare the model
 decaynet = DecaynetToolbox(sample_rate=fs)
 
+# Generate time axis
+time_axis = (torch.linspace(0, rir.shape[1] - 1, rir.shape[1]) / fs)
+
 # Process
 prediction = decaynet.estimate_parameters(rir)
-generated_edc = decaynet.estimate_EDC(prediction[0],
-                                      prediction[1],
-                                      prediction[2],
-                                      prediction[3])
+print('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ====\n' + str(prediction[0]))
+print('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====\n' + str(prediction[1]))
+print('==== Estimated N values (linear scale): ====\n' + str(prediction[2]))
+
+generated_edc = decaynet.generate_EDCs(prediction[0],
+                                       prediction[1],
+                                       prediction[2],
+                                       time_axis=time_axis)
 
 # Get ground truth EDCs from raw RIRs:
 # 1) Schroeder integration
 true_edc = decaynet._preprocess.schroeder(rir)
 # 2) Discard last 5 percent of EDC
 true_edc = decaynet._preprocess.discard_last5(true_edc)
-# 3) Downsample
-true_edc = torch.nn.functional.interpolate(true_edc, size=2400, scale_factor=None, mode='linear',
-                                           align_corners=False, recompute_scale_factor=None)
-
-# Generate time axis for plot
-fs = 240
-l_edc = 10
-time_axis = (torch.linspace(0, l_edc * fs - 1, round((1 / 0.95) * l_edc * fs)) / fs)
-time_axis = time_axis[0:2400]
 
 # Plot
+time_axis = time_axis[0:round(0.95*len(time_axis))]  # discard last 5 percent of plot time axis
 plot_waveform(rir, fs, title='Impulse')
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
 for band_idx in range(true_edc.shape[1]):
-    plt.plot(time_axis, 10 * torch.log10(true_edc[0, band_idx, :].squeeze()), colors[band_idx],
-             label='Measured EDC, {} Hz'.format(decaynet.filter_frequencies[band_idx]))
-    plt.plot(time_axis, 10 * torch.log10(generated_edc[band_idx, 0, :].squeeze()), colors[band_idx] + '--',
-             label='DecayFitNet fit, {} Hz'.format(decaynet.filter_frequencies[band_idx]))
+    plt.plot(time_axis, 10 * torch.log10(true_edc[0, band_idx, :].squeeze()),
+             colors[band_idx], label='Measured EDC, {} Hz'.format(decaynet.filter_frequencies[band_idx]))
+    plt.plot(time_axis, 10 * torch.log10(generated_edc[band_idx, 0, :].squeeze()),
+             colors[band_idx] + '--', label='DecayFitNet fit, {} Hz'.format(decaynet.filter_frequencies[band_idx]))
 
 plt.xlabel('time [s]')
 plt.ylabel('energy [dB]')
