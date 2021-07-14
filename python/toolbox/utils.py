@@ -1,5 +1,5 @@
 '''
-The file contains useful functions such as plotting and padding.
+The file contains useful functions such as plotting, padding, and MSE calculations.
 '''
 
 import torch
@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from typing import Iterable, Tuple, TypeVar, Callable, Any, List
-
+import warnings
 
 def plot_fft(signal: torch.Tensor, fs: int, title: str ='Frequency Response'):
     '''Plots the frequency response (magnitude) of a signal. '''
@@ -56,3 +56,26 @@ def plot_waveform(waveform: torch.Tensor, sample_rate: int, title: str = "Wavefo
             axes[c].set_ylim(ylim)
     figure.suptitle(title)
     plt.show()
+
+
+def calc_mse(ground_truth_edc, estimated_edc):
+    # Calculate MSE between ground truth and estimated fit. Returns mse in frequency bands
+    loss_fn = torch.nn.MSELoss(reduction='none')
+    this_mse = torch.mean(loss_fn(10 * torch.log10(ground_truth_edc), 10 * torch.log10(estimated_edc)), 2)
+    print('==== Average MSE between input EDCs and estimated fits: {:.02f} dB ===='.format(float(torch.mean(this_mse))))
+    this_mse_bands = this_mse.squeeze().tolist()
+    print('MSE between input EDC and estimated fit for different frequency bands: 125 Hz: {:.02f} dB -- '
+          '250 Hz: {:.02f} dB -- 500 Hz: {:.02f} dB -- 1 kHz: {:.02f} dB -- 2 kHz: {:.02f} dB -- '
+          '4 kHz: {:.02f} dB'.format(*this_mse_bands))
+    if torch.mean(this_mse) > 5:
+        warnings.warn('High MSE value detected. The obtained fit may be bad.')
+        print('!!! WARNING !!!: High MSE value detected. The obtained fit may be bad. You may want to try:')
+        print(
+            '1) Increase fadeout_length. This decreases the upper limit of integration, thus cutting away more from the'
+            'end of the EDC. Especially if your RIR has fadeout windows or very long silence at the end, this can'
+            'improve the fit considerably.')
+        print(
+            '2) Manually cut away direct sound and potentially strong early reflections that would cause the EDC to drop '
+            'sharply in the beginning.')
+
+    return this_mse

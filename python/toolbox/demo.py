@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 
 from decaynet_toolbox import DecaynetToolbox
-from utils import plot_waveform, plot_fft
+from utils import plot_waveform, plot_fft, calc_mse
 
 ## ===============================================================================
 ## Parameters
@@ -15,15 +15,21 @@ from utils import plot_waveform, plot_fft
 # audio_path = '/Volumes/scratch/work/falconr1/datasets/MusicSamples'
 # rir_fname = 'Single_503_1_RIR.wav'
 # audio_path = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/summer830/raw_rirs'
-# audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/roomtransition/Wav Files/Meeting Room to Hallway/Source in Room/No Line of Sight'
-audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/summer830/raw_rirs'
 # rir_fname = '0825_1_raw_rirs.wav'
 # rir_fname = '0825_4_raw_rirs.wav'
 # rir_fname = '0001_4_raw_rirs.wav'
-rir_fname = '0001_1_raw_rirs.wav'  # First measurement
-# rir_fname = 'RIR_25cm.wav'
 
-fadeout_length = 0
+# audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/roomtransition/Wav Files/Meeting Room to Hallway/Source in Room/No Line of Sight'
+# rir_fname = 'RIR_25cm.wav'
+# fadeout_length = 0.1  # in seconds
+
+# audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/summer830/sh_rirs'
+# rir_fname = '0001_1_sh_rirs.wav'  # First measurement
+# fadeout_length = 0  # in seconds
+
+audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/arni/sh_rirs'
+rir_fname = '03333_sh_rirs.wav'
+fadeout_length = 1  # in seconds
 
 ## ===============================================================================
 # Load some impulse
@@ -47,25 +53,29 @@ print('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ==
 print('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====\n' + str(prediction[1]))
 print('==== Estimated N values (linear scale): ====\n' + str(prediction[2]))
 
-generated_edc = decaynet.generate_EDCs(prediction[0],
-                                       prediction[1],
-                                       prediction[2],
-                                       time_axis=time_axis)
+fitted_edc = decaynet.generate_EDCs(prediction[0],
+                                    prediction[1],
+                                    prediction[2],
+                                    time_axis=time_axis)
 
 # Get ground truth EDCs from raw RIRs:
 # 1) Schroeder integration
 true_edc = decaynet._preprocess.schroeder(rir)
 # 2) Discard last 5 percent of EDC
 true_edc = decaynet._preprocess.discard_last5(true_edc)
+# 3) Permute into same order as estimated fit
+true_edc = true_edc.permute(1, 0, 2)
+
+mse_per_frequencyband = calc_mse(true_edc, fitted_edc)
 
 # Plot
 time_axis = time_axis[0:round(0.95*len(time_axis))]  # discard last 5 percent of plot time axis
 plot_waveform(rir, fs, title='Impulse')
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
-for band_idx in range(true_edc.shape[1]):
-    plt.plot(time_axis, 10 * torch.log10(true_edc[0, band_idx, :].squeeze()),
+for band_idx in range(true_edc.shape[0]):
+    plt.plot(time_axis, 10 * torch.log10(true_edc[band_idx, 0, :].squeeze()),
              colors[band_idx], label='Measured EDC, {} Hz'.format(decaynet.filter_frequencies[band_idx]))
-    plt.plot(time_axis, 10 * torch.log10(generated_edc[band_idx, 0, :].squeeze()),
+    plt.plot(time_axis, 10 * torch.log10(fitted_edc[band_idx, 0, :].squeeze()),
              colors[band_idx] + '--', label='DecayFitNet fit, {} Hz'.format(decaynet.filter_frequencies[band_idx]))
 
 plt.xlabel('time [s]')

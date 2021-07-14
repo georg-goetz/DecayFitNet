@@ -147,7 +147,7 @@ def test_fit_preprocessEDCs():
     decaynet = DecaynetToolbox(sample_rate=48000, normalization=True, device=device)
 
     if EVAL_TYPE == 'motus':
-        data_path = os.path.join(DATA_PATH, 'summer830', 'raw_rirs')
+        data_path = os.path.join(DATA_PATH, 'summer830', 'sh_rirs')
     elif EVAL_TYPE == 'roomtransition':
         data_path = os.path.join(DATA_PATH, 'roomtransition', 'Wav Files')
     else:
