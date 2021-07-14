@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 from decaynet_toolbox import DecaynetToolbox
 import core
 
-# EVAL_TYPE = 'roomtransition'
-EVAL_TYPE = 'motus'
+EVAL_TYPE = 'roomtransition'
+# EVAL_TYPE = 'motus'
 # DATA_PATH = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/decayfit_toolbox'
 DATA_PATH = '/Volumes/ARTSRAM/AkuLab_Datasets'
 

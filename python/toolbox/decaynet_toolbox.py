@@ -100,8 +100,18 @@ class DecaynetToolbox():
         n_slopes_prediction += 1  # because python starts at 0
         temp = torch.linspace(1, 3, 3).repeat(n_slopes_prediction.shape[0], 1).to(self.device)
         mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
-        ort_outs[1][~mask] = 0
-        ort_outs[0][~mask] = 0
+
+        # Sort T and A values:
+        # 1) assign nans to sort the inactive slopes to the end
+        ort_outs[0][~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
+        ort_outs[1][~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
+
+        # 2) sort and set nans to zero again
+        ort_outs[0], sort_idxs = torch.sort(ort_outs[0])
+        for batch_idx, a_this_batch in enumerate(ort_outs[1]):
+            ort_outs[1][batch_idx, :] = a_this_batch[sort_idxs[batch_idx]]
+        ort_outs[0][torch.isnan(ort_outs[0])] = 0  # replace nan from above
+        ort_outs[1][torch.isnan(ort_outs[1])] = 0  # replace nan from above
 
         if do_scale_adjustment:
             # T value predictions have to be adjusted for the time-scale conversion (downsampling)
