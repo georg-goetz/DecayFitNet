@@ -42,12 +42,12 @@ class DecaynetToolbox():
         self.normalization = normalization
         self.device = device
 
-        PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'data')
+        PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
 
-        self._onnx_model = onnx.load(os.path.join(PATH_ONNX, "decaynet.onnx"))
+        self._onnx_model = onnx.load(os.path.join(PATH_ONNX, "DecayFitNet.onnx"))
         onnx.checker.check_model(self._onnx_model)
-        self._session = onnxruntime.InferenceSession(os.path.join(PATH_ONNX, "decaynet.onnx"))
-        self.input_transform = pickle.load(open(os.path.join(PATH_ONNX, 'input_transform_final.pkl'), 'rb'))
+        self._session = onnxruntime.InferenceSession(os.path.join(PATH_ONNX, "DecayFitNet.onnx"))
+        self.input_transform = pickle.load(open(os.path.join(PATH_ONNX, 'input_transform.pkl'), 'rb'))
 
         self._preprocess = PreprocessRIR_new(input_transform=self.input_transform,
                                              normalization=normalization,

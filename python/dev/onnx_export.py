@@ -36,8 +36,8 @@ N_LAYERS = 3
 N_FILTER = 128
 
 # Path to weights and export directory
-NETWORK_NAME = 'DecayFitNet_final_red100_sl3_3layers_128f_relu0_1500units_do0_b2048_lr5e3_sch20_e100_wd1e3.pth'
-PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'data')
+NETWORK_NAME = 'DecayFitNet.pth'
+PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
 
 
 def get_net():
@@ -65,7 +65,7 @@ def export_onnx():
     print('=== Exporting model to ONNX')
     torch.onnx.export(net,  # model being run
                       x,  # model input (or a tuple for multiple inputs)
-                      os.path.join(PATH_ONNX, "decaynet.onnx"),  # where to save the model (can be a file or file-like object)
+                      os.path.join(PATH_ONNX, "DecayFitNet.onnx"),  # where to save the model (can be a file or file-like object)
                       export_params=True,  # store the trained parameter weights inside the model file
                       opset_version=10,  # the ONNX version to export the model to
                       do_constant_folding=True,  # whether to execute constant folding for optimization
