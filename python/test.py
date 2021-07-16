@@ -6,11 +6,11 @@ import os
 import h5py
 import matplotlib.pyplot as plt
 
-from decaynet_toolbox import DecaynetToolbox
-import core
+from toolbox.DecayFitNetToolbox import DecayFitNetToolbox
+import toolbox.core as core
 
-EVAL_TYPE = 'roomtransition'
-# EVAL_TYPE = 'motus'
+# EVAL_TYPE = 'roomtransition'
+EVAL_TYPE = 'motus'
 # DATA_PATH = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/decayfit_toolbox'
 DATA_PATH = '/Volumes/ARTSRAM/AkuLab_Datasets'
 
@@ -22,10 +22,10 @@ def is_audio_file(filename):
     return any((filename_lower.endswith(ext) and not filename_lower.startswith('.')) for ext in AUDIO_EXTENSIONS)
 
 
-def make_dataset(dir):
+def make_dataset(directory):
     audio_files = []
 
-    for root, _, fnames in sorted(os.walk(dir)):
+    for root, _, fnames in sorted(os.walk(directory)):
         for fname in sorted(fnames):
             if is_audio_file(fname):
                 path = os.path.join(root, fname)
@@ -42,9 +42,8 @@ class RirDataset(Dataset):
         assert os.path.exists(data_path), 'ERROR: Data path does not exist.'
         audio_files = make_dataset(data_path)
         if len(audio_files) == 0:
-            raise (RuntimeError("Found 0 audio files in subfolders of: " + data_path + "\n"
-                                                                                       "Supported audio extensions are: " + ",".join(
-                AUDIO_EXTENSIONS)))
+            raise (RuntimeError("Found 0 audio files in subfolders of: " + data_path +
+                                "\n Supported audio extensions are: " + ",".join(AUDIO_EXTENSIONS)))
 
         self.data_path = data_path
         self.audio_files = audio_files
@@ -69,7 +68,7 @@ def test_fit_precomputedEDCs():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Prepare the model
-    decaynet = DecaynetToolbox(sample_rate=48000, normalization=True, device=device)
+    decaynet = DecayFitNetToolbox(sample_rate=48000, normalization=True, device=device)
 
     # Process
     if EVAL_TYPE == 'motus':
@@ -144,7 +143,7 @@ def test_fit_preprocessEDCs():
     """ Test the fit of the pre trained DecayFitNet to one of the test datasets, doing the preprocessing."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Prepare the model
-    decaynet = DecaynetToolbox(sample_rate=48000, normalization=True, device=device)
+    decayfitnet = DecayFitNetToolbox(sample_rate=48000, normalization=True, device=device)
 
     if EVAL_TYPE == 'motus':
         data_path = os.path.join(DATA_PATH, 'summer830', 'sh_rirs')
@@ -168,15 +167,15 @@ def test_fit_preprocessEDCs():
 
             # This is the fully preprocessed (Octave-band filtering, normalization, downsampling) EDC, which is used as
             # the input of the network
-            edcs_preprocessed = decaynet.preprocess(rir.to(device))
+            edcs_preprocessed = decayfitnet.preprocess(rir.to(device))
             assert not torch.any(torch.isnan(edcs_preprocessed)), "Nan after pre processing"
             assert not torch.any(torch.isinf(edcs_preprocessed)), "Inf after pre processing"
 
             # Additionally, we need the unnormalized EDCs to compare the fitting result against
             # 1) Schroeder integration
-            edcs_unnormalized = decaynet._preprocess.schroeder(rir.to(device))
+            edcs_unnormalized = decayfitnet._preprocess.schroeder(rir.to(device))
             # 2) Discard last 5 percent of EDC
-            edcs_unnormalized = decaynet._preprocess.discard_last5(edcs_unnormalized)
+            edcs_unnormalized = core.discard_last5(edcs_unnormalized)
             # 3) Downsample
             edcs_unnormalized = torch.nn.functional.interpolate(edcs_unnormalized, size=2400, scale_factor=None,
                                                                 mode='linear', align_corners=False,
@@ -185,7 +184,8 @@ def test_fit_preprocessEDCs():
             edcs_unnormalized = edcs_unnormalized.view(-1, 2400)
 
             # do prediction with network
-            prediction = decaynet.estimate_parameters(edcs_preprocessed, do_preprocess=False, do_scale_adjustment=False)
+            prediction = decayfitnet.estimate_parameters(edcs_preprocessed, do_preprocess=False,
+                                                         do_scale_adjustment=False)
             t_prediction, a_prediction, n_prediction = prediction[0].to(device), \
                                                        prediction[1].to(device), \
                                                        prediction[2].to(device)
@@ -219,17 +219,6 @@ def test_fit_preprocessEDCs():
         plt.show()
 
         print('Test finished succesfully.')
-
-
-def helper():
-    """ This is just a helper function to debug. Nothing important to see here. """
-    from utils import plot_waveform
-    fs = 48000  # 24000
-
-    # plot_waveform(x, fs)
-    plot_waveform(edcs[0:6, :].unsqueeze(0), fs)
-    plot_waveform(edcs_normalized.unsqueeze(0), fs)
-    plot_waveform(edcs_normalized.permute([1, 0, 2]), fs)
 
 
 if __name__ == '__main__':

@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 import torch.onnx
-from python.dev import DecayFitNet
-import tools
+import toolbox.core as core
+import toolbox.utils as utils
 
 
 ## NOTES:
@@ -37,14 +37,14 @@ N_FILTER = 128
 
 # Path to weights and export directory
 NETWORK_NAME = 'DecayFitNet.pth'
-PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
+PATH_ONNX = Path.joinpath(Path(__file__).parent.parent, 'model')
 
 
 def get_net():
     """ Loads the pretrained model and weights. """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    net = DecayFitNet.DecayFitNetLinear(3, UNITS_PER_LAYER, N_FILTER, N_LAYERS, 0, DROPOUT, 1, device)
-    tools.load_model(net, os.path.join(PATH_ONNX, NETWORK_NAME), device)
+    net = core.DecayFitNetLinear(3, UNITS_PER_LAYER, N_FILTER, N_LAYERS, 0, DROPOUT, 1, device)
+    utils.load_model(net, os.path.join(PATH_ONNX, NETWORK_NAME), device)
     net.eval()
 
     return net

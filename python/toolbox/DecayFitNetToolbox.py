@@ -19,7 +19,6 @@
 
 import torch
 import numpy as np
-import scipy
 import pickle
 import onnx
 import onnxruntime
@@ -27,10 +26,10 @@ import os
 from pathlib import Path
 from typing import Union, List
 
-from core import PreprocessRIR_new, generate_synthetic_edc
+from .core import PreprocessRIR, generate_synthetic_edc, postprocess_parameters, adjust_timescale
 
 
-class DecaynetToolbox():
+class DecayFitNetToolbox:
     output_size = 2400  # Timesteps of downsampled RIRs
     filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
     __version = '0.0.3'
@@ -49,14 +48,14 @@ class DecaynetToolbox():
         self._session = onnxruntime.InferenceSession(os.path.join(PATH_ONNX, "DecayFitNet.onnx"))
         self.input_transform = pickle.load(open(os.path.join(PATH_ONNX, 'input_transform.pkl'), 'rb'))
 
-        self._preprocess = PreprocessRIR_new(input_transform=self.input_transform,
-                                             normalization=normalization,
-                                             sample_rate=self.fs,
-                                             filter_frequencies=self.filter_frequencies,
-                                             output_size=self.output_size)
+        self._preprocess = PreprocessRIR(input_transform=self.input_transform,
+                                         normalization=normalization,
+                                         sample_rate=self.fs,
+                                         filter_frequencies=self.filter_frequencies,
+                                         output_size=self.output_size)
 
     def __repr__(self):
-        frmt = f'DecaynetToolbox {self.__version}  \n'
+        frmt = f'DecayFitNetToolbox {self.__version}  \n'
         frmt += f'Input fs = {self.fs} \n'
         frmt += f'Output_size = {self.output_size} \n'
         frmt += f'Normalization = {self.normalization} \n'
@@ -91,39 +90,17 @@ class DecaynetToolbox():
         else:
             edcs = signal
 
-        ort_inputs = {self._session.get_inputs()[0].name: DecaynetToolbox._to_numpy(edcs)}
+        ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
         ort_outs = [torch.from_numpy(jj) for jj in ort_outs]
 
-        # Only use the number of slopes that were predicted, zero others
-        _, n_slopes_prediction = torch.max(ort_outs[3], 1)
-        n_slopes_prediction += 1  # because python starts at 0
-        temp = torch.linspace(1, 3, 3).repeat(n_slopes_prediction.shape[0], 1).to(self.device)
-        mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
-
-        # Sort T and A values:
-        # 1) assign nans to sort the inactive slopes to the end
-        ort_outs[0][~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
-        ort_outs[1][~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
-
-        # 2) sort and set nans to zero again
-        ort_outs[0], sort_idxs = torch.sort(ort_outs[0])
-        for batch_idx, a_this_batch in enumerate(ort_outs[1]):
-            ort_outs[1][batch_idx, :] = a_this_batch[sort_idxs[batch_idx]]
-        ort_outs[0][torch.isnan(ort_outs[0])] = 0  # replace nan from above
-        ort_outs[1][torch.isnan(ort_outs[1])] = 0  # replace nan from above
+        t_prediction, a_prediction, n_prediction, __ = postprocess_parameters(ort_outs[0], ort_outs[1], ort_outs[2],
+                                                                              ort_outs[3], self.device)
 
         if do_scale_adjustment:
-            # T value predictions have to be adjusted for the time-scale conversion (downsampling)
-            t_adjust = 10 / (signal.shape[1] / self.fs)
-            ort_outs[0] = ort_outs[0] / t_adjust
+            t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, signal.shape[1], self.fs)
 
-            # N value predictions have to be converted from exponent representation to actual value and adjusted for
-            # the downsampling
-            n_adjust = signal.shape[1] / 2400
-            ort_outs[2] = (10**ort_outs[2]) / n_adjust
-
-        return ort_outs
+        return [t_prediction, a_prediction, n_prediction]
 
     def generate_EDCs(self,
                       estimated_T: Union[torch.Tensor, List[float]],
@@ -172,7 +149,3 @@ class DecaynetToolbox():
             out = out[:, 0:round(0.95*out.shape[1])]
 
         return out
-
-
-
-

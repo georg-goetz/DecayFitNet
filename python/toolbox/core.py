@@ -1,84 +1,175 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset
 import torchaudio
 import scipy
 import scipy.stats
 import scipy.signal
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Iterable, Tuple, TypeVar, Callable, Any, List, T, Dict
+from typing import Iterable, Tuple, TypeVar, Callable, Any, List, Dict
+import h5py
+
 T = TypeVar('T', bound=Callable[..., Any])
+
 
 # https://realpython.com/documenting-python-code/
 
+class DecayDataset(Dataset):
+    """Decay dataset."""
+
+    def __init__(self, n_slopes_min=1, n_slopes_max=5, edcs_per_slope=10000, triton_flag=False, testset_flag=False,
+                 testset_name='summer830'):
+        """
+        Args:
+        """
+        self.testset_flag = testset_flag
+
+        if triton_flag:
+            datasets_dir = '/scratch/elec/t40527-hybridacoustics/datasets/decayfitting/'
+        else:
+            datasets_dir = '/Volumes/ARTSRAM/GeneralDecayEstimation/decayFitting/'
+
+        if not testset_flag:
+            # Load EDCs
+            f_edcs = h5py.File(datasets_dir + 'edcs.mat', 'r')
+            edcs = np.array(f_edcs.get('edcs'))
+
+            # Load noise values
+            f_noise_levels = h5py.File(datasets_dir + 'noiseLevels.mat', 'r')
+            noise_levels = np.array(f_noise_levels.get('noiseLevels'))
+
+            # Get EDCs into pytorch format
+            edcs = torch.from_numpy(edcs).float()
+            self.edcs = edcs[:, (n_slopes_min - 1) * edcs_per_slope:n_slopes_max * edcs_per_slope]
+
+            # Put EDCs into dB
+            edcs_db = 10 * torch.log10(self.edcs)
+            assert not torch.any(torch.isnan(edcs_db)), 'NaN values in db EDCs'
+
+            # Normalize dB values to lie between -1 and 1 (input scaling)
+            self.edcs_db_normfactor = torch.max(torch.abs(edcs_db))
+            edcs_db_normalized = 2 * edcs_db / self.edcs_db_normfactor
+            edcs_db_normalized += 1
+
+            assert not torch.any(torch.isnan(edcs_db_normalized)), 'NaN values in normalized EDCs'
+            assert not torch.any(torch.isinf(edcs_db_normalized)), 'Inf values in normalized EDCs'
+            self.edcs_db_normalized = edcs_db_normalized
+
+            # Generate vector that specifies how many slopes are in every EDC
+            self.n_slopes = torch.zeros((1, self.edcs.shape[1]))
+            for slope_idx in range(n_slopes_min, n_slopes_max + 1):
+                self.n_slopes[0, (slope_idx - 1) * edcs_per_slope:slope_idx * edcs_per_slope] = slope_idx - 1
+            self.n_slopes = self.n_slopes.long()
+
+            # Noise level values are used in training for the noise loss
+            noise_levels = torch.from_numpy(noise_levels).float()
+            self.noise_levels = noise_levels[:, (n_slopes_min - 1) * edcs_per_slope:n_slopes_max * edcs_per_slope]
+
+            assert self.edcs.shape[1] == self.noise_levels.shape[1], 'More EDCs than noise_levels'
+        else:
+            if testset_name == 'summer830':
+                f_edcs = h5py.File(datasets_dir + 'summer830/edcs.mat', 'r')
+                edcs = torch.from_numpy(np.array(f_edcs.get('summer830edcs/edcs'))).float().view(-1, 2400).T
+            elif testset_name == 'roomtransition':
+                f_edcs = h5py.File(datasets_dir + 'roomtransition/edcs.mat', 'r')
+                edcs = torch.from_numpy(np.array(f_edcs.get('roomTransitionEdcs/edcs'))).float().view(-1, 2400).T
+            else:
+                raise NotImplementedError('Unknown testset.')
+
+            self.edcs = edcs
+
+    def __len__(self):
+        return self.edcs.shape[1]
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        if self.testset_flag:
+            edcs = self.edcs[:, idx]
+            return edcs
+        else:
+            edcs = self.edcs[:, idx]
+            edcs_db_normalized = self.edcs_db_normalized[:, idx]
+            noise_levels = self.noise_levels[:, idx]
+            n_slopes = self.n_slopes[:, idx]
+
+            return edcs, noise_levels, edcs_db_normalized, n_slopes
 
 
+class DecayFitNetLinear(nn.Module):
+    def __init__(self, n_slopes, n_max_units, n_filters, n_layers, relu_slope, dropout, reduction_per_layer, device):
+        super(DecayFitNetLinear, self).__init__()
 
-def decay_kernel(rt_range, rt_delta, t):
-    """Decaying envelope for EDC"""
-    rt_candidates = np.arange(rt_range[0], rt_range[1]+rt_delta, rt_delta)
-    tau_candidates = -np.log(1e-6) / rt_candidates
-    kernel = np.exp(np.outer(-t, tau_candidates))
-    return kernel
+        self.n_slopes = n_slopes
+        self.device = device
 
+        self.activation = nn.LeakyReLU(relu_slope)
+        self.dropout = nn.Dropout(dropout)
 
-def generate_synthetic_edc(T, A, noiseLevel, t, device) -> torch.Tensor:
-    """ Generates an EDC from the estimated parameters."""
-    # Calculate decay rates, based on the requirement that after T60 seconds, the level must drop to -60dB
-    tau_vals = -torch.log(torch.Tensor([1e-6])).to(device) / T
+        # Base Network
+        self.conv1 = nn.Conv1d(1, n_filters, kernel_size=13, padding=6)
+        self.maxpool1 = nn.MaxPool1d(10)
+        self.conv2 = nn.Conv1d(n_filters, n_filters * 2, kernel_size=7, padding=3)
+        self.maxpool2 = nn.MaxPool1d(8)
+        self.conv3 = nn.Conv1d(n_filters * 2, n_filters * 4, kernel_size=7, padding=3)
+        self.maxpool3 = nn.MaxPool1d(6)
+        self.input = nn.Linear(5 * n_filters * 4, n_max_units)
 
-    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
-    t_rep = t.repeat(T.shape[0], T.shape[1], 1)
-    tau_vals_rep = tau_vals.unsqueeze(2).repeat(1, 1, t.shape[0])
+        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer ** i)),
+                                                round(n_max_units * (reduction_per_layer ** (i + 1)))) for i in
+                                      range(n_layers - 1)])
 
-    # Calculate exponentials from decay rates
-    time_vals = -t_rep*tau_vals_rep
-    exponentials = torch.exp(time_vals)
+        # T_vals
+        self.final1_t = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final2_t = nn.Linear(50, n_slopes)
 
-    # Offset is required to make last value of EDC be correct
-    exp_offset = exponentials[:, :, -1].unsqueeze(2).repeat(1, 1, t.shape[0])
+        # A_vals
+        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final2_a = nn.Linear(50, n_slopes)
 
-    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
-    A_rep = A.unsqueeze(2).repeat(1, 1, t.shape[0])
+        # Noise
+        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final2_n = nn.Linear(50, 1)
 
-    # Multiply exponentials with their amplitudes and sum all exponentials together
-    edcs = A_rep * (exponentials - exp_offset)
-    edc = torch.sum(edcs, 1)
+        # N Slopes
+        self.final1_n_slopes = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final2_n_slopes = nn.Linear(50, n_slopes)
 
-    # Add noise
-    noise = noiseLevel * torch.linspace(len(t), 1, len(t)).to(device)
-    edc = edc + noise
-    return edc
+    def forward(self, edcs):
+        """
+        Args:
 
+        Returns:
+        """
 
-def generate_synthetic_edc_old(T, A, noiseLevel, std_decay_normals, t, device):
-    """ Generates an EDC from the estimated parameters."""
-    ## TODO: are noiseLevel and std_decay_normals vectors or scalar ??
+        # Base network
+        x = self.maxpool1(self.activation(self.conv1(edcs.unsqueeze(1))))
+        x = self.maxpool2(self.activation(self.conv2(x)))
+        x = self.maxpool3(self.activation(self.conv3(x)))
+        x = self.activation(self.input(self.dropout(x.view(edcs.shape[0], -1))))
+        for layer in self.linears:
+            x = layer(x)
+            x = self.activation(x)
 
-    if np.any(std_decay_normals) == 0:
-        T_active = T  # [T > 0.001]
-        A_active = A  # [T > 0.001]
+        # T_vals
+        t = self.activation(self.final1_t(x))
+        t = torch.pow(self.final2_t(t), 2.0) + 0.01
 
-        tau_vals = -torch.log(torch.Tensor([1e-6])).to(device) / T_active
-        time_vals = torch.outer(-t, tau_vals)
-        exponentials = torch.exp(time_vals)
-        edcs = A_active * exponentials
-        edc = torch.sum(edcs, 1)
-    else:
-        decay_axis = np.arange(0.01, 10 + 0.01,  0.01)
-        decay_distribution = np.zeros(len(decay_axis))
+        # A_vals
+        a = self.activation(self.final1_a(x))
+        a = torch.pow(self.final2_a(a), 2.0) + 1e-16
 
-        for idx, this_T in enumerate(T):
-            this_dist = scipy.stats.norm.pdf(decay_axis, this_T, std_decay_normals)
-            this_dist = A[idx] * this_dist / np.max(this_dist)
-            decay_distribution = decay_distribution + this_dist
+        # Noise
+        n_exponent = self.activation(self.final1_n(x))
+        n_exponent = self.final2_n(n_exponent)
 
-        kernel = decay_kernel([0.01, 10], 0.01, t)
-        edc = np.dot(kernel, decay_distribution)
+        # N Slopes
+        n_slopes = self.activation(self.final1_n_slopes(x))
+        n_slopes = self.final2_n_slopes(n_slopes)
 
-    noise = noiseLevel * torch.linspace(len(t), 1, len(t)).to(device)
-    edc = edc + noise
-    return edc.float()
+        return t, a, n_exponent, n_slopes
 
 
 class FilterByOctaves(nn.Module):
@@ -135,7 +226,7 @@ class FilterByOctaves(nn.Module):
         return out
 
     def get_filterbank_impulse_response(self):
-        '''Returns the impulse response of the filterbank.'''
+        """Returns the impulse response of the filterbank."""
         impulse = torch.zeros(1, self.fs * 20)
         impulse[0, self.fs] = 1
         response = self.forward(impulse)
@@ -170,9 +261,9 @@ def _tupleset(t: Iterable[T], i: int, value: T) -> Tuple[T, ...]:
 
 
 def _cumtrapz(y: torch.Tensor,
-             x: np.ndarray = None,
-             device: str = 'cpu',
-             axis: int = -1,) -> torch.Tensor:
+              x: np.ndarray = None,
+              device: str = 'cpu',
+              axis: int = -1, ) -> torch.Tensor:
     """
     Cumulative trapezoid integral in PyTorch.
     Heavily based on the scipy implementation here:
@@ -212,7 +303,8 @@ def _cumtrapz(y: torch.Tensor,
 
 
 class Normalizer(torch.nn.Module):
-    ''' Normalizes the data to have zero mean and unit variance for each feature.'''
+    """ Normalizes the data to have zero mean and unit variance for each feature."""
+
     def __init__(self, means, stds):
         super(Normalizer, self).__init__()
         self.means = means
@@ -226,15 +318,25 @@ class Normalizer(torch.nn.Module):
         return out
 
 
-class PreprocessRIR_new(nn.Module):
+def discard_last5(edc: torch.Tensor) -> torch.Tensor:
+    # Discard last 5%
+    last_id = int(np.round(0.95 * edc.shape[-1]))
+    out = edc[..., 0:last_id]
+
+    return out
+
+
+class PreprocessRIR(nn.Module):
     """ Preprocess a RIR to extract the EDC and prepare it for the neural network model.
         The preprocessing includes: (Upated 24.06.2021):
 
         # RIR -> Filterbank -> octave-band filtered RIR
         # octave-band filtered RIR -> backwards integration -> EDC
         # EDC -> delete last 5% of samples -> EDC_crop
-        # EDC_crop -> downsample to the smallest number above 2400, i.e. by factor floor(original_length / 2400) -> EDC_ds1
-        # EDC_ds1 -> as it might still be a little more than 2400 samples, just cut away everything after 2400 samples -> EDC_ds2
+        # EDC_crop -> downsample to the smallest number above 2400, i.e. by factor floor(original_length / 2400)
+            -> EDC_ds1
+        # EDC_ds1 -> as it might still be a little more than 2400 samples, just cut away everything after 2400 samples
+            -> EDC_ds2
         # EDC_ds2 -> dB scale-> EDC_db
         # EDC_db -> normalization -> EDC_final that is the input to the network
     """
@@ -244,7 +346,7 @@ class PreprocessRIR_new(nn.Module):
                  normalization: bool = True,
                  sample_rate: int = 48000,
                  filter_frequencies: List[int] = [125, 250, 500, 1000, 2000, 4000], output_size: int = 2400):
-        super(PreprocessRIR_new, self).__init__()
+        super(PreprocessRIR, self).__init__()
         self.input_transform = input_transform
         self.filter_frequencies = filter_frequencies
         self.output_size = output_size
@@ -252,11 +354,12 @@ class PreprocessRIR_new(nn.Module):
         self.normalization = normalization
         self.eps = 1e-10
 
-        self.filterbank = FilterByOctaves(center_freqs=filter_frequencies, order=3, fs=self.sample_rate, backend='scipy')
+        self.filterbank = FilterByOctaves(center_freqs=filter_frequencies, order=3, fs=self.sample_rate,
+                                          backend='scipy')
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.schroeder(x)
-        out = self.discard_last5(out)
+        out = discard_last5(out)
 
         # Discard all beyond -140
         # TODO: I am skipping this part due to tensor processing
@@ -295,26 +398,87 @@ class PreprocessRIR_new(nn.Module):
 
         return out
 
-    def discard_last5(self, edc: torch.Tensor) -> torch.Tensor:
-        # Discard last 5%
-        last_id = int(np.round(0.95 * edc.shape[-1]))
-        out = edc[..., 0:last_id]
 
-        return out
+def generate_synthetic_edc(T, A, noiseLevel, t, device) -> torch.Tensor:
+    """ Generates an EDC from the estimated parameters."""
+    # Calculate decay rates, based on the requirement that after T60 seconds, the level must drop to -60dB
+    tau_vals = -torch.log(torch.Tensor([1e-6])).to(device) / T
+
+    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
+    t_rep = t.repeat(T.shape[0], T.shape[1], 1)
+    tau_vals_rep = tau_vals.unsqueeze(2).repeat(1, 1, t.shape[0])
+
+    # Calculate exponentials from decay rates
+    time_vals = -t_rep * tau_vals_rep
+    exponentials = torch.exp(time_vals)
+
+    # Offset is required to make last value of EDC be correct
+    exp_offset = exponentials[:, :, -1].unsqueeze(2).repeat(1, 1, t.shape[0])
+
+    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
+    A_rep = A.unsqueeze(2).repeat(1, 1, t.shape[0])
+
+    # Multiply exponentials with their amplitudes and sum all exponentials together
+    edcs = A_rep * (exponentials - exp_offset)
+    edc = torch.sum(edcs, 1)
+
+    # Add noise
+    noise = noiseLevel * torch.linspace(len(t), 1, len(t)).to(device)
+    edc = edc + noise
+    return edc
 
 
-def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, device, training_flag=True,
+def postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, device, sort_values=True):
+    # Clamp noise to reasonable values to avoid numerical problems and go from exponent to actual noise value
+    n_prediction = torch.clamp(n_prediction, -32, 32)
+
+    # Go from noise exponent to noise value
+    n_prediction = torch.pow(10, n_prediction)
+
+    # Get a binary mask to only use the number of slopes that were predicted, zero others
+    _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
+    n_slopes_prediction += 1  # because python starts at 0
+    temp = torch.linspace(1, 3, 3).repeat(n_slopes_prediction.shape[0], 1).to(device)
+    mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
+    a_prediction[~mask] = 0
+
+    if sort_values:
+        # Sort T and A values:
+        # 1) assign nans to sort the inactive slopes to the end
+        t_prediction[~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
+        a_prediction[~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
+
+        # 2) sort and set nans to zero again
+        t_prediction, sort_idxs = torch.sort(t_prediction)
+        for batch_idx, a_this_batch in enumerate(a_prediction):
+            a_prediction[batch_idx, :] = a_this_batch[sort_idxs[batch_idx]]
+        t_prediction[torch.isnan(t_prediction)] = 0  # replace nan from above
+        a_prediction[torch.isnan(a_prediction)] = 0  # replace nan from above
+
+    return t_prediction, a_prediction, n_prediction, n_slopes_prediction
+
+
+def adjust_timescale(t_prediction, n_prediction, L_EDC, fs):
+    # T value predictions have to be adjusted for the time-scale conversion (downsampling)
+    t_adjust = 10 / (L_EDC / fs)
+    t_prediction = t_prediction / t_adjust
+
+    # N value predictions have to be converted from exponent representation to actual value and adjusted for
+    # the downsampling
+    n_adjust = L_EDC / 2400
+    n_prediction = n_prediction / n_adjust
+
+    return t_prediction, n_prediction
+
+
+def edc_loss(t_vals_prediction, a_vals_prediction, n_vals_prediction, edcs_true, device, training_flag=True,
              plot_fit=False, apply_mean=True):
     """ Computes the loss between an EDC generated with the estimated parameters and a target EDC. """
     fs = 240
     l_edc = 10
 
     # Generate the t values that would be discarded as well, otherwise the models do not match.
-    t = (torch.linspace(0, l_edc * fs - 1, round((1/0.95)*l_edc * fs)) / fs).to(device)
-
-    # Clamp noise to reasonable values to avoid numerical problems and go from exponent to actual noise value
-    n_exp_prediction = torch.clamp(n_exp_prediction, -32, 32)
-    n_vals_prediction = torch.pow(10, n_exp_prediction)
+    t = (torch.linspace(0, l_edc * fs - 1, round((1 / 0.95) * l_edc * fs)) / fs).to(device)
 
     if training_flag:
         # use L1Loss in training
@@ -327,7 +491,7 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
 
     # discard last 5 percent (i.e. the step which is already done for the true EDC and the test datasets prior to
     # saving them to the .mat files that are loaded in the beginning of this script
-    edc_prediction = edc_prediction[:, 0:l_edc*fs]
+    edc_prediction = edc_prediction[:, 0:l_edc * fs]
 
     if plot_fit:
         for idx in range(0, edcs_true.shape[0]):
@@ -346,15 +510,3 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
         loss = loss_fn(edc_true_db, edc_prediction_db)
 
     return loss
-
-
-def help():
-    from utils import plot_waveform
-    fs = 48000 # 24000
-
-    # plot_waveform(x, fs)
-    plot_waveform(out, fs)
-    plot_waveform(out.unsqueeze(0), fs)
-    plot_waveform(out.permute([1, 0, 2]), fs)
-
-
