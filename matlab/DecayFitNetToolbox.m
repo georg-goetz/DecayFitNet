@@ -35,9 +35,16 @@ classdef DecayFitNetToolbox < handle
             % function findPlaceholderLayers on the returned object.
             % obj.onnx_model = importONNXLayers(fullfile(obj.PATH_ONNX, 'DecayFitNet_v9.onnx'),'ImportWeights',true)  % Fails due to unsupported functions
             
-            % FAILS :
-            % The value of 'params' is invalid. It must satisfy the function: @(x)isa(x,'ONNXParameters').
-            obj.onnx_model = importONNXFunction(fullfile(obj.PATH_ONNX, 'DecayFitNet_v9.onnx'), 'DecayFitNet_model')
+            % Load ONNX model:
+            if exist('DecayFitNet_model.mat', 'file')
+                disp('Loading precompiled model DecayFitNet_model.mat')
+                obj.onnx_model = load('DecayFitNet_model.mat').tmp;
+            else
+                obj.onnx_model = importONNXFunction(fullfile(obj.PATH_ONNX, 'DecayFitNet_v9.onnx'), 'DecayFitNet_model');
+                tmp = obj.onnx_model;
+                save('DecayFitNet_model.mat', 'tmp');
+            end
+            disp(obj.onnx_model)
             %[output, x66, x69, x72, state] = test_DecayFitNet(signal, '');
             
             fid = py.open(fullfile(obj.PATH_ONNX, 'input_transform_p2.pkl'),'rb');
