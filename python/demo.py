@@ -3,6 +3,7 @@
 import torch
 import torchaudio
 import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 
 from toolbox.DecayFitNetToolbox import DecayFitNetToolbox
@@ -30,6 +31,22 @@ fadeout_length = 0.1  # in seconds
 # audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/arni/sh_rirs'
 # rir_fname = '03333_sh_rirs.wav'
 # fadeout_length = 1  # in seconds
+
+
+audio_path = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/summer830/raw_rirs'
+#rir_fname = '0825_1_raw_rirs.wav'
+#rir_fname = '0825_4_raw_rirs.wav'
+#rir_fname = '0001_4_raw_rirs.wav'  # Huge
+rir_fname = '0001_1_raw_rirs.wav'  # First measurement
+fadeout_length = 1  # in seconds
+
+
+audio_path = Path.joinpath(Path(__file__).parent.parent, 'model')
+#rir_fname = '0825_1_raw_rirs.wav'
+#rir_fname = '0825_4_raw_rirs.wav'
+#rir_fname = '0001_4_raw_rirs.wav'  # Huge
+rir_fname = '0001_1_raw_rirs.wav'  # First measurement
+fadeout_length = 1  # in seconds
 
 ## ===============================================================================
 # Load some impulse
