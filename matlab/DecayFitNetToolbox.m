@@ -124,7 +124,7 @@ classdef DecayFitNetToolbox < handle
                 edcs = obj.preprocess(rir);
             end
             
-            [t_prediction, a_prediction, n_prediction, n_slopes_probabilities, state] = test_DecayFitNet(edcs, obj.onnx_model, 'InputDataPermutation', [2,1]);
+            [t_prediction, a_prediction, n_prediction, n_slopes_probabilities, state] = DecayFitNet_model(edcs, obj.onnx_model, 'InputDataPermutation', [2,1]);
             % TODO: do postprocessing of parameters
             if do_scale_adjustment
                 [t_prediction, a_prediction, n_prediction] = DecayFitNetToolbox.postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, false);
