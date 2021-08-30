@@ -70,7 +70,7 @@ for bIdx = 1:numBands
 end
 
 if normalize == true
-    decay = decay / max(decay);
+    decay = decay ./ max(decay);
 end
 
 end

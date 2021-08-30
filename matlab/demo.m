@@ -42,7 +42,7 @@ disp(sprintf('The impulse has %d timesteps at %d sampling rate = %f seconds.', s
 
 %% Load model and estimate parameters
 
-time_axis = linspace(0, (size(rir,1) - 1) / fs, size(rir,1) );
+
 
 net = DecayFitNetToolbox();
 [t_values, a_values, n_values] = net.estimate_parameters(rir, true, true);
@@ -55,19 +55,24 @@ disp(n_values)
 estimated_edc = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis);
 
 % Get true EDC to compare
-true_edc = rir2decay(rir, fs, [125, 250, 500, 1000, 4000, 8000], true, true);
-true_edc = DecayFitNetToolbox.discarLast5(true_edc);
+true_edc = rir2decay(rir, fs, [125, 250, 500, 1000, 4000, 8000], true, true, true);
+%true_edc = DecayFitNetToolbox.discarLast5(true_edc);
 
+time_axis = linspace(0, (size(true_edc,1) - 1) / 2400, size(true_edc,1) );
 f = figure(2);
 subplot(3,1,1);
 utils.plot_waveform(rir, fs, 'Original RIR', f)
-subplot(3,1,2);
 ylim([-1, 1])
-utils.plot_waveform(10 .* log10(true_edc), fs, 'True EDC', f)
-ax = gca;
-ax.YScale = 'log';
-ylim([-100, 0])
+
+subplot(3,1,2);
+%utils.plot_waveform(10 .* log10(true_edc), fs, 'True EDC', f)
+plot(time_axis, pow2db(true_edc))
+title('True EDC')
+ylim([-80, 0])
 subplot(3,1,3);
-utils.plot_waveform(estimated_edc, fs, 'Estimated EDC', f)
-ax = gca;
-ax.YScale = 'log';
+%utils.plot_waveform(estimated_edc, fs, 'Estimated EDC', f)
+plot(time_axis, pow2db(estimated_edc))
+title('Estimated EDC')
+%ax = gca;
+%ax.YScale = 'log';
+ylim([-80, 0])

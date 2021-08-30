@@ -67,18 +67,18 @@ classdef DecayFitNetToolbox < handle
             tAdjustFactors_5dbCut = zeros(1, nRirs, nbands);
 
             % Extract decays
-            schroederDecays = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true);
+            schroederDecays = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true, true);
             warning('Ignoring onset detection') % TODO: Fix this
             
             rirIdx = 1;
             for bandIdx = 1:nbands
                 % Do backwards integration and remove trailing zeroes
                 thisDecay = schroederDecays(:, bandIdx);
-                thisLength = find(flipud(thisDecay), 1);
-                thisDecay = thisDecay(1:end-thisLength+1);
+                %thisLength = find(flipud(thisDecay), 1);
+                %thisDecay = thisDecay(1:end-thisLength+1);
 
                 % Normalize to 1
-                thisDecay = thisDecay / max(thisDecay);
+                %thisDecay = thisDecay / max(thisDecay);
 
                 % Discard last 5%
                 thisDecay = DecayFitNetToolbox.discarLast5(thisDecay);
@@ -88,7 +88,7 @@ classdef DecayFitNetToolbox < handle
                 thisDecay_ds = downsample(thisDecay, floor(length(thisDecay)/obj.output_size));
                 edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
                 
-                % Cut at -140dB
+                % Conver to dB and clamp at -140dB
                 this_edc = pow2db(edcs(1:obj.output_size, rirIdx, bandIdx));
                 thisLength = find(this_edc < -140, 1);
                 if ~isempty(thisLength)
@@ -131,7 +131,9 @@ classdef DecayFitNetToolbox < handle
                 edcs = obj.preprocess(rir);
             end
             
+            % Forward pass of the DecayFitNet
             [t_prediction, a_prediction, n_prediction, n_slopes_probabilities, state] = DecayFitNet_model(edcs, obj.onnx_model, 'InputDataPermutation', [2,1]);
+            
             % TODO: do postprocessing of parameters
             if do_scale_adjustment
                 [t_prediction, a_prediction, n_prediction] = DecayFitNetToolbox.postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, false);
@@ -151,7 +153,7 @@ classdef DecayFitNetToolbox < handle
             n_prediction = min(max(n_prediction, -32), 32);
 
             % Go from noise exponent to noise value
-            n_prediction = n_prediction .^ 10;
+            n_prediction = 10 .^ n_prediction;
 
             % Get a binary mask to only use the number of slopes that were predicted, zero others
             [~, n_slopes_prediction] = max(n_slopes_probabilities, [], 1);
