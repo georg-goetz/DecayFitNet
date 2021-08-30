@@ -18,7 +18,7 @@ audio_path = '../model/';  %local path
 %rir_fname = '0001_4_raw_rirs.wav';  % Huge
 rir_fname = '0001_1_raw_rirs.wav';  % First measurement
 
-fadeout_length = 1;  % in secs
+fadeout_length = 0;  % in secs
 %% Load an impulse
 
 [rir, fs] = audioread(fullfile(audio_path, rir_fname));
@@ -35,30 +35,28 @@ if fadeout_length > 0
     rir = rir(1:end + round(-fadeout_length*fs), :);
 end
 
-disp(sprintf('The impulse has %d channels (before selecting the first one.', channels))
-disp(sprintf('The impulse has %d timesteps at %d sampling rate = %f seconds.', size(rir,1), fs, size(rir,1) / fs))
+fprintf('The impulse has %d channels (before selecting the first one).\n', channels)
+fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', size(rir,1), fs, size(rir,1) / fs)
 %sound(rir, fs)
 
 
 %% Load model and estimate parameters
-
-
-
 net = DecayFitNetToolbox();
 [t_values, a_values, n_values] = net.estimate_parameters(rir, true, true);
-disp('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ====\n') 
+disp('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(t_values)
-disp('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====\n') 
+disp('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====') 
 disp(a_values)
-disp('==== Estimated N values (linear scale): ====\n') 
+disp('==== Estimated N values (linear scale): ====') 
 disp(n_values)
-estimated_edc = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis);
+
+true_edc = rir2decay(rir, fs, [125, 250, 500, 1000, 4000, 8000], true, true, true);
+time_axis = linspace(0, (size(true_edc,1) - 1) / fs, size(true_edc,1) );
+estimated_edc = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis).';
 
 % Get true EDC to compare
-true_edc = rir2decay(rir, fs, [125, 250, 500, 1000, 4000, 8000], true, true, true);
 %true_edc = DecayFitNetToolbox.discarLast5(true_edc);
 
-time_axis = linspace(0, (size(true_edc,1) - 1) / 2400, size(true_edc,1) );
 f = figure(2);
 subplot(3,1,1);
 utils.plot_waveform(rir, fs, 'Original RIR', f)
@@ -76,3 +74,13 @@ title('Estimated EDC')
 %ax = gca;
 %ax.YScale = 'log';
 ylim([-80, 0])
+
+
+figure;
+hold on;
+cmap = parula(size(true_edc, 2));
+for bandIdx=1:size(true_edc, 2)
+    plot(time_axis, pow2db(true_edc(:, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
+    plot(time_axis, pow2db(estimated_edc(:, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
+    ylim([-100, 0]);
+end

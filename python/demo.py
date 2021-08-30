@@ -20,9 +20,9 @@ from toolbox.core import discard_last5
 # rir_fname = '0825_4_raw_rirs.wav'
 # rir_fname = '0001_4_raw_rirs.wav'
 
-audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/roomtransition/Wav Files/Meeting Room to Hallway/Source in Room/No Line of Sight'
-rir_fname = 'RIR_25cm.wav'
-fadeout_length = 0.1  # in seconds
+# audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/roomtransition/Wav Files/Meeting Room to Hallway/Source in Room/No Line of Sight'
+# rir_fname = 'RIR_25cm.wav'
+# fadeout_length = 0.1  # in seconds
 
 # audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/summer830/sh_rirs'
 # rir_fname = '0001_1_sh_rirs.wav'  # First measurement
@@ -31,6 +31,10 @@ fadeout_length = 0.1  # in seconds
 # audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/arni/sh_rirs'
 # rir_fname = '03333_sh_rirs.wav'
 # fadeout_length = 1  # in seconds
+
+audio_path = '/Volumes/ARTSRAM/AkuLab_Datasets/summer830/raw_rirs'
+rir_fname = '0001_1_raw_rirs.wav'  # First measurement
+fadeout_length = 0  # in seconds
 
 
 audio_path = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/summer830/raw_rirs'

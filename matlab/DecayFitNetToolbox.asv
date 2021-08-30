@@ -50,13 +50,19 @@ classdef DecayFitNetToolbox < handle
             fid = py.open(fullfile(obj.PATH_ONNX, 'input_transform_p2.pkl'),'rb');
             obj.input_transform = py.pickle.load(fid);
         end
-                
-        function [edcs, scaleAdjustFactors] = preprocess(obj, signal)    
+        
+        function signal = preprocess_old(obj, signal)
+            % Resampling    
+            p = size(signal, 1);
+            q = obj.output_size;
+            signal = resample(signal, q, p);
+        end
+        
+        function edcs = preprocess(obj, signal)    
             nbands = length(obj.filter_frequencies);
             nRirs = 1;
             edcs = zeros(obj.output_size, nRirs, nbands);
             tAdjustFactors = zeros(1, nRirs, nbands);
-            nAdjustFactors = zeros(1, nRirs, nbands);
 
             % Extract decays
             schroederDecays = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true, true);
@@ -70,12 +76,9 @@ classdef DecayFitNetToolbox < handle
                 thisDecay = DecayFitNetToolbox.discarLast5(thisDecay);
 
                 % Downsample to obj.output_size (default = 2400) samples
+                tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sample_rate);
                 thisDecay_ds = downsample(thisDecay, floor(length(thisDecay)/obj.output_size));
                 edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
-                
-                % Calculate adjustment factors for t and n predictions
-                tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sample_rate);
-                nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / 2400;
                 
                 % Conver to dB and clamp at -140dB
                 this_edc = pow2db(edcs(1:obj.output_size, rirIdx, bandIdx));
@@ -93,8 +96,6 @@ classdef DecayFitNetToolbox < handle
             end
             
             edcs = squeeze(edcs);
-            scaleAdjustFactors.tAdjust = squeeze(tAdjustFactors);
-            scaleAdjustFactors.nAdjust = squeeze(nAdjustFactors);
             % Returns edcs
         end
         
@@ -107,21 +108,21 @@ classdef DecayFitNetToolbox < handle
             end
             
             if do_preprocess
-                [edcs, scaleAdjustFactors] = obj.preprocess(rir);
+                edcs = obj.preprocess(rir);
             end
             
             % Forward pass of the DecayFitNet
             [t_prediction, a_prediction, n_prediction, n_slopes_probabilities] = DecayFitNet_model(edcs, obj.onnx_model, 'InputDataPermutation', [2,1]);
             
             if do_scale_adjustment
-                [t_prediction, a_prediction, n_prediction] = DecayFitNetToolbox.postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, true, scaleAdjustFactors);
+                [t_prediction, a_prediction, n_prediction] = DecayFitNetToolbox.postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, false);
             end
             
         end
     end
     
     methods(Static)
-        function [t_prediction, a_prediction, n_prediction, n_slopes_prediction] = postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, sort_values, scaleAdjustFactors)
+        function [t_prediction, a_prediction, n_prediction, n_slopes_prediction] = postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, sort_values)
             %% Process the estimated t, a, and n parameters (output of the decayfitnet) to meaningful values
             if ~exist('sort_values', 'var')
                 sort_values = true;
@@ -138,9 +139,6 @@ classdef DecayFitNetToolbox < handle
             tmp = repmat(linspace(1,3,3), [size(n_slopes_prediction,2), 1])';
             mask = tmp <= repmat(n_slopes_prediction, [3,1]);
             a_prediction(~mask) = 0;
-            
-            t_prediction = t_prediction ./ scaleAdjustFactors.tAdjust.';
-            n_prediction = n_prediction ./ scaleAdjustFactors.nAdjust.';
 
            if sort_values
                 % Sort T and A values:
@@ -150,9 +148,9 @@ classdef DecayFitNetToolbox < handle
 
                 % 2) sort and set nans to zero again
                 [t_prediction, sort_idxs] = sort(t_prediction);
-                for batchIdx = 1: size(a_prediction, 2)
-                    a_this_batch = a_prediction(:, batchIdx);
-                    a_prediction(:, batchIdx) = a_this_batch(sort_idxs(:, batchIdx));
+                for batch_idx = [1: 1: size(a_prediction,1)]
+                    a_this_batch = a_prediction(batch_idx, :);
+                    a_prediction(batch_idx, :) = a_this_batch(sort_idxs(batch_idx));
                 end
                 t_prediction(isnan(t_prediction)) = 0;  
                 a_prediction(isnan(a_prediction)) = 0; 
@@ -186,12 +184,6 @@ classdef DecayFitNetToolbox < handle
             % Calculate exponentials from decay rates
             time_vals = -t_rep .* tau_vals_rep;
             exponentials = exp(time_vals);
-            
-            % Zero exponentials where T=A=0
-            for batchIdx = 1:size(T, 1)
-                zeroT = (T(batchIdx, :) == 0);
-                exponentials(batchIdx, zeroT, :) = 0;
-            end
             
             % Offset is required to make last value of EDC be correct
             exp_offset = repmat(exponentials(:, :, end), [1,1, size(t, 2)]);
