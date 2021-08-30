@@ -1,3 +1,7 @@
+close all; clear variables; 
+%% External dependencies
+addpath(genpath('octave'));
+
 %% Parameters
 audio_path = '/m/cs/work/falconr1/datasets/MusicSamples';
 audio_path = '/Volumes/scratch/work/falconr1/datasets/MusicSamples';
@@ -16,7 +20,7 @@ audio_path = '../model/';  %local path
 %rir_fname = '0825_1_raw_rirs.wav';
 %rir_fname = '0825_4_raw_rirs.wav';
 %rir_fname = '0001_4_raw_rirs.wav';  % Huge
-rir_fname = '0001_1_raw_rirs.wav';  % First measurement
+rir_fname = '0001_1_sh_rirs.wav';  % First measurement
 
 fadeout_length = 0;  % in secs
 %% Load an impulse
@@ -50,7 +54,7 @@ disp(a_values)
 disp('==== Estimated N values (linear scale): ====') 
 disp(n_values)
 
-true_edc = rir2decay(rir, fs, [125, 250, 500, 1000, 4000, 8000], true, true, true);
+true_edc = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true);
 time_axis = linspace(0, (size(true_edc,1) - 1) / fs, size(true_edc,1) );
 estimated_edc = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis).';
 
@@ -79,8 +83,21 @@ ylim([-80, 0])
 figure;
 hold on;
 cmap = parula(size(true_edc, 2));
+legendStr = {'Measured EDC, 125 Hz', 'DecayFitNet fit, 125 Hz', ...
+    'Measured EDC, 250 Hz', 'DecayFitNet fit, 250 Hz',...
+    'Measured EDC, 500 Hz', 'DecayFitNet fit, 500 Hz',...
+    'Measured EDC, 1 kHz', 'DecayFitNet fit, 1 kHz',...
+    'Measured EDC, 2 kHz', 'DecayFitNet fit, 2 kHz',...
+    'Measured EDC, 4 kHz', 'DecayFitNet fit, 4 kHz'};
+L = round(0.95*size(true_edc, 1)); % discard last 5 percent
+allMSE = zeros(size(true_edc, 2), 1);
 for bandIdx=1:size(true_edc, 2)
-    plot(time_axis, pow2db(true_edc(:, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
-    plot(time_axis, pow2db(estimated_edc(:, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
-    ylim([-100, 0]);
+    plot(time_axis(1:L), pow2db(true_edc(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
+    plot(time_axis(1:L), pow2db(estimated_edc(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
+    ylim([-60, 0]);
+    
+    allMSE(bandIdx) = immse(pow2db(true_edc(1:L, bandIdx)), pow2db(estimated_edc(1:L, bandIdx)));
 end
+legend(legendStr, 'Location', 'EastOutside');
+fprintf('==== Average MSE between input EDCs and estimated fits: %.02f ====\n', mean(allMSE));
+fprintf('MSE between input EDC and estimated fit for different frequency bands:\n 125 Hz: %.02f, 250 Hz: %.02f, 500 Hz: %.02f, 1 kHz: %.02f, 2 kHz: %.02f, 4 kHz: %.02f\n', allMSE(:));

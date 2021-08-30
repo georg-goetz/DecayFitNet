@@ -65,19 +65,19 @@ classdef DecayFitNetToolbox < handle
             for bandIdx = 1:nbands
                 % Do backwards integration and remove trailing zeroes
                 thisDecay = schroederDecays(:, bandIdx);
-
-                % Discard last 5%
-                thisDecay = DecayFitNetToolbox.discarLast5(thisDecay);
-
-                % Downsample to obj.output_size (default = 2400) samples
-                thisDecay_ds = downsample(thisDecay, floor(length(thisDecay)/obj.output_size));
-                edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
                 
                 % Calculate adjustment factors for t and n predictions
                 tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sample_rate);
                 nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / 2400;
+
+                % Discard last 5%
+                thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
+
+                % Downsample to obj.output_size (default = 2400) samples
+                thisDecay_ds = resample(thisDecay, obj.output_size, length(thisDecay));
+                edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
                 
-                % Conver to dB and clamp at -140dB
+                % Convert to dB and clamp at -140dB
                 this_edc = pow2db(edcs(1:obj.output_size, rirIdx, bandIdx));
                 thisLength = find(this_edc < -140, 1);
                 if ~isempty(thisLength)
@@ -209,7 +209,7 @@ classdef DecayFitNetToolbox < handle
             
         end
         
-        function output = discarLast5(signal)
+        function output = discardLast5(signal)
             % Discard last 5% samples of a signal
             assert(size(signal,1) > size(signal,2), 'The signal should be in [timesteps, channels]')
             last5 = round(0.95 * size(signal,1));

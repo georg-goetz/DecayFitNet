@@ -35,15 +35,12 @@ end
 
 numBands = numel(fBands);
 
-% Apply 1/3 octave band filters to RIR
-ofb = octaveFilterBank('1 octave', fs, 'FilterOrder', 8);
-fc = getCenterFrequencies(ofb);
-rirFBands = ofb(rir);
-
-% find closest match in ANSI octave band center frequencies to the
-% specified ones
-[deviation, idxsBandsOfInterest] = min(abs(repmat(fc.', 1, numBands) - fBands));
-assert(~any(deviation > 0.01*fBands), 'The requested frequency band was not found in the ANSI-specified 1/3 octave bands.');
+% Apply octave band filters to RIR, order=3
+rirFBands = zeros(size(rir));
+for bandIdx=1:numBands
+    [B, A] = octdsgn(fBands(bandIdx), fs, 3);
+    rirFBands(:, bandIdx) = filter(B, A, rir);
+end
 
 % detect peak in rir, because the decay will be calculated from that point
 % onwards
@@ -54,8 +51,8 @@ else
 end
 % [~, t0] = max(rir.^2);
 
-% get octave filtered rir in desired frequency bands from rir peak onwards
-rirFBands = rirFBands(t0:end, idxsBandsOfInterest);
+% get octave filtered rir from rir peak onwards
+rirFBands = rirFBands(t0:end, :);
 
 % calculate decay curves for every band
 decay = zeros(size(rirFBands));
