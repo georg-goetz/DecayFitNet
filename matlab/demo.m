@@ -1,4 +1,4 @@
-close all; clear variables; 
+close all; clear variables; clc; lastwarn('');
 %% External dependencies
 addpath(genpath('octave'));
 
@@ -96,7 +96,7 @@ for bandIdx=1:size(true_edc, 2)
     plot(time_axis(1:L), pow2db(estimated_edc(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
     ylim([-60, 0]);
     
-    allMSE(bandIdx) = immse(pow2db(true_edc(1:L, bandIdx)), pow2db(estimated_edc(1:L, bandIdx)));
+    allMSE(bandIdx) = mseLoss(pow2db(true_edc(1:L, bandIdx)), pow2db(estimated_edc(1:L, bandIdx)));
 end
 legend(legendStr, 'Location', 'EastOutside');
 fprintf('==== Average MSE between input EDCs and estimated fits: %.02f ====\n', mean(allMSE));
