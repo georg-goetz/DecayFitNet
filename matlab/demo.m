@@ -3,24 +3,8 @@ close all; clear variables; clc; lastwarn('');
 addpath(genpath('octave'));
 
 %% Parameters
-audio_path = '/m/cs/work/falconr1/datasets/MusicSamples';
-audio_path = '/Volumes/scratch/work/falconr1/datasets/MusicSamples';
-%rir_fname = 'Single_503_1_RIR.wav';  % Single slope clean
-%rir_fname = 'Single_502_1_RIR.wav';
-%rir_fname = 'Single_EE_lobby_1_RIR.wav';  % Long tail
-
-audio_path = '/Volumes/scratch/elec/t40527-hybridacoustics/datasets/summer830/raw_rirs';
-%rir_fname = '0825_1_raw_rirs.wav';
-%rir_fname = '0825_4_raw_rirs.wav';
-%rir_fname = '0001_4_raw_rirs.wav';  % Huge
-rir_fname = '0001_1_raw_rirs.wav';  % First measurement
-
-
-audio_path = '../model/';  %local path
-%rir_fname = '0825_1_raw_rirs.wav';
-%rir_fname = '0825_4_raw_rirs.wav';
-%rir_fname = '0001_4_raw_rirs.wav';  % Huge
-rir_fname = '0001_1_sh_rirs.wav';  % First measurement
+audio_path = '../model';  %local path
+rir_fname = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
 
 fadeout_length = 0;  % in secs
 %% Load an impulse

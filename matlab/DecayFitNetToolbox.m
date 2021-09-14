@@ -24,7 +24,8 @@ classdef DecayFitNetToolbox < handle
             obj.normalization = normalization;
             
             % Load onnx model
-            obj.PATH_ONNX = fullfile('..', 'model');
+            [thisDir, ~, ~] = fileparts(mfilename('fullpath'));
+            obj.PATH_ONNX = fullfile(thisDir, '..', 'model');
             
             % FAILS:
             % ONNX network with multiple outputs is not supported. Instead, use 'importONNXLayers' with 'ImportWeights' set to true.
@@ -46,7 +47,7 @@ classdef DecayFitNetToolbox < handle
             end
             [~, msgid] = lastwarn;
             if strcmp(msgid, 'MATLAB:load:cannotInstantiateLoadedVariable')
-                error('Could not load the ONNX model. Please install the following toolbox to load ONNX models in MATLAB: https://se.mathworks.com/matlabcentral/fileexchange/67296-deep-learning-toolbox-converter-for-onnx-model-format');
+                error('Could not load the ONNX model. Please make sure you are running MATLAB 2020b or later and installed the following toolbox to load ONNX models in MATLAB: https://se.mathworks.com/matlabcentral/fileexchange/67296-deep-learning-toolbox-converter-for-onnx-model-format');
             end
             
             disp(obj.onnx_model)
