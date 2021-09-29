@@ -166,17 +166,15 @@ classdef DecayFitNetToolbox < handle
         end
         
         function edc = generate_synthetic_edcs(T, A, noiseLevel, t)
-            %% Generates an EDC from the estimated parameters.
-            %if size(t,2) > size(t,1)
-            %    t = permute(t, [2,1]);  %Timesteps first format
-            %end
+            %% Generates an EDC from the estimated parameters.  
+            assert(size(T, 2) == size(A, 2) && size(T, 2) == size(noiseLevel, 2), 'Wrong size in the input (different batch size in T, A, N)')
+            [nSlopes, batchSize] = size(T);
+            nSamples = length(t);
             
             % Permute to [batch_size, n_slopes], for consistency with the toolbox.
             T = permute(T, [2,1]);
             A = permute(A, [2,1]);
             noiseLevel = permute(noiseLevel, [2,1]);
-            assert(size(T, 1) == size(A,1) && size(T,1) == size(noiseLevel, 1), 'Wrong size in the input')
-                
             
             % Calculate decay rates, based on the requirement that after T60 seconds, the level must drop to -60dB
             tau_vals = -log(1e-6) ./ T;
@@ -185,8 +183,8 @@ classdef DecayFitNetToolbox < handle
             %t_rep = repmat(t, [1, size(T, 2), size(T, 1)]);
             %tau_vals_rep = repmat(permute(tau_vals, [2,1]), [size(t, 1), 1, 1 ]);
             % Repeat values such that end result will be (batch_size, n_slopes, sampled_idx)
-            t_rep = repmat(permute(t, [1, 3, 2]), [size(T, 1), size(T, 2),1]);
-            tau_vals_rep = repmat(permute(tau_vals, [1,2,3]), [1, 1, size(t, 2) ]);
+            t_rep = repmat(permute(t, [1, 3, 2]), [batchSize, nSlopes, 1]);
+            tau_vals_rep = repmat(permute(tau_vals, [1,2,3]), [1, 1, nSamples]);
             assert(all(size(t_rep) == size(tau_vals_rep)), 'Wrong size in tau')
             
             % Calculate exponentials from decay rates
@@ -194,25 +192,24 @@ classdef DecayFitNetToolbox < handle
             exponentials = exp(time_vals);
             
             % Zero exponentials where T=A=0
-            for batchIdx = 1:size(T, 1)
+            for batchIdx = 1:batchSize
                 zeroT = (T(batchIdx, :) == 0);
                 exponentials(batchIdx, zeroT, :) = 0;
             end
             
             % Offset is required to make last value of EDC be correct
-            exp_offset = repmat(exponentials(:, :, end), [1,1, size(t, 2)]);
+            exp_offset = repmat(exponentials(:, :, end), [1, 1, nSamples]);
             
             % Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
-            A_rep = repmat(A, [1, 1, size(t,2)]);
+            A_rep = repmat(A, [1, 1, nSamples]);
             
             % Multiply exponentials with their amplitudes and sum all exponentials together
             edcs = A_rep .* (exponentials - exp_offset);
-            edc = squeeze(sum(edcs, 2));
+            edc = reshape(sum(edcs, 2), batchSize, nSamples);
 
             % Add noise
-            noise = noiseLevel .* linspace(length(t), 1, length(t));
+            noise = noiseLevel .* linspace(nSamples, 1, nSamples);
             edc = edc + noise;
-            
         end
         
         function output = discardLast5(signal)
