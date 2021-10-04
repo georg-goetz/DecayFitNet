@@ -80,7 +80,8 @@ classdef DecayFitNetToolbox < handle
                 thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
 
                 % Downsample to obj.output_size (default = 2400) samples
-                thisDecay_ds = resample(thisDecay, obj.output_size, length(thisDecay));
+                dsFactor = floor(length(thisDecay)/obj.output_size);
+                thisDecay_ds = downsample(thisDecay, dsFactor);
                 edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
                 
                 % Convert to dB and clamp at -140dB
