@@ -1,4 +1,4 @@
-function decay = rir2decay(rir, fs, fBands, doBackwardsInt, ignoreOnset, normalize)
+function [decay, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, ignoreOnset, normalize)
 % calculates energy decay curves in octave-bands from a room impulse response
 %
 % Inputs:
@@ -36,9 +36,10 @@ end
 numBands = numel(fBands);
 
 % Apply octave band filters to RIR, order=3
+fOrder = 3;
 rirFBands = zeros(size(rir));
 for bandIdx=1:numBands
-    [B, A] = octdsgn(fBands(bandIdx), fs, 3);
+    [B, A] = octdsgn(fBands(bandIdx), fs, fOrder);
     rirFBands(:, bandIdx) = filter(B, A, rir);
 end
 
@@ -56,18 +57,22 @@ rirFBands = rirFBands(t0:end, :);
 
 % calculate decay curves for every band
 decay = zeros(size(rirFBands));
+
 for bIdx = 1:numBands
     this_rir = rirFBands(:, bIdx); 
-    this_rir = this_rir / max(abs(this_rir)); % normalize to maximum 1
     if doBackwardsInt == true
         decay(:, bIdx) = schroederInt(this_rir);
+        if normalize == true
+            normvals = max(abs(decay));
+            decay = decay ./ normvals; % normalize to maximum 1
+        end
     else
         decay(:, bIdx) = this_rir.^2;
+        if normalize == true
+            normvals = max(abs(decay));
+            decay = decay ./ normvals; % normalize to maximum 1
+        end
     end
-end
-
-if normalize == true
-    decay = decay ./ max(decay);
 end
 
 end
