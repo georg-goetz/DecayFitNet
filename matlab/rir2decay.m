@@ -67,6 +67,7 @@ for bIdx = 1:numBands
 end
 
 % normalize to max 1 and store normalization values
+normvals = [];
 if normalize == true
     normvals = max(abs(decay));
     decay = decay ./ normvals; % normalize to maximum 1
