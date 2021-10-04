@@ -57,7 +57,6 @@ rirFBands = rirFBands(t0:end, :);
 
 % calculate decay curves for every band
 decay = zeros(size(rirFBands));
-
 for bIdx = 1:numBands
     this_rir = rirFBands(:, bIdx); 
     if doBackwardsInt == true
@@ -67,6 +66,7 @@ for bIdx = 1:numBands
     end
 end
 
+% normalize to max 1 and store normalization values
 if normalize == true
     normvals = max(abs(decay));
     decay = decay ./ normvals; % normalize to maximum 1
