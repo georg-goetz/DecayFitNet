@@ -62,17 +62,14 @@ for bIdx = 1:numBands
     this_rir = rirFBands(:, bIdx); 
     if doBackwardsInt == true
         decay(:, bIdx) = schroederInt(this_rir);
-        if normalize == true
-            normvals = max(abs(decay));
-            decay = decay ./ normvals; % normalize to maximum 1
-        end
     else
         decay(:, bIdx) = this_rir.^2;
-        if normalize == true
-            normvals = max(abs(decay));
-            decay = decay ./ normvals; % normalize to maximum 1
-        end
     end
+end
+
+if normalize == true
+    normvals = max(abs(decay));
+    decay = decay ./ normvals; % normalize to maximum 1
 end
 
 end
