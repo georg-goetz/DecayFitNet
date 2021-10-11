@@ -39,16 +39,10 @@ numBands = numel(fBands);
 % Apply octave band filters to RIR, order=3
 fOrder = 3;
 rirFBands = zeros(size(rir));
-octFilBank = octaveFilterBank('1 octave',fs, ...
-                              'FrequencyRange',fBands([1, end]), ...);
-                              'FilterOrder',8);
-%for bandIdx=1:numBands
-%     [B, A] = octdsgn(fBands(bandIdx), fs, fOrder);
-%     rirFBands(:, bandIdx) = filter(B, A, rir);
-%    octFilt = octaveFilter(fBands(bandIdx), 'SampleRate', fs);
-%    rirFBands(:, bandIdx) = octFilt(rir);
-%end
-rirFBands = octFilBank(rir);
+for bandIdx=1:numBands
+    [B, A] = octdsgn(fBands(bandIdx), fs, fOrder);
+    rirFBands(:, bandIdx) = filter(B, A, rir);
+end
 
 % detect peak in rir, because the decay will be calculated from that point
 % onwards
