@@ -3,7 +3,7 @@ classdef DecayFitNetToolbox < handle
     properties
         output_size = 2400  % Timesteps of downsampled RIRs
         filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-        version = '0.0.3'
+        version = '0.0.4'
         sample_rate
         normalization
         PATH_ONNX
@@ -78,20 +78,18 @@ classdef DecayFitNetToolbox < handle
 
                 % Discard last 5%
                 thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
+                
+                % Convert to dB and clamp at -140dB
+                thisDecay = pow2db(thisDecay);
+                thisLength = find(thisDecay < -140, 1);
+                if ~isempty(thisLength)
+                    thisDecay = thisDecay(1:thisLength);
+                end
 
                 % Downsample to obj.output_size (default = 2400) samples
                 dsFactor = floor(length(thisDecay)/obj.output_size);
                 thisDecay_ds = downsample(thisDecay, dsFactor);
                 edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
-                
-                % Convert to dB and clamp at -140dB
-                this_edc = pow2db(edcs(1:obj.output_size, rirIdx, bandIdx));
-                thisLength = find(this_edc < -140, 1);
-                if ~isempty(thisLength)
-                    edcs(1:obj.output_size, rirIdx, bandIdx) = this_edc(1:thisLength);
-                else
-                    edcs(1:obj.output_size, rirIdx, bandIdx) = this_edc;
-                end
 
                 if obj.normalization
                     tmp = 2 * edcs(1:obj.output_size, rirIdx, bandIdx) ./ obj.input_transform{'edcs_db_normfactor'};
