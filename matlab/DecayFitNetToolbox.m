@@ -3,7 +3,7 @@ classdef DecayFitNetToolbox < handle
     properties
         output_size = 2400  % Timesteps of downsampled RIRs
         filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-        version = '0.0.4'
+        version = '0.0.5'
         sample_rate
         normalization
         PATH_ONNX
@@ -57,18 +57,26 @@ classdef DecayFitNetToolbox < handle
             obj.input_transform = py.pickle.load(fid);
         end
                 
-        function [edcs, scaleAdjustFactors] = preprocess(obj, signal)    
-            nbands = length(obj.filter_frequencies);
+        function [edcs, scaleAdjustFactors] = preprocess(obj, signal, includeResidualBands)
+            if nargin < 3
+                includeResidualBands = false;
+            end
+            
+            nBands = length(obj.filter_frequencies);
+            if includeResidualBands == true
+                nBands = nBands + 2;
+            end
+            
             nRirs = 1;
-            edcs = zeros(obj.output_size, nRirs, nbands);
-            tAdjustFactors = zeros(1, nRirs, nbands);
-            nAdjustFactors = zeros(1, nRirs, nbands);
+            edcs = zeros(obj.output_size, nRirs, nBands);
+            tAdjustFactors = zeros(1, nRirs, nBands);
+            nAdjustFactors = zeros(1, nRirs, nBands);
 
             % Extract decays
-            schroederDecays = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true, true);
+            schroederDecays = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true, true, includeResidualBands);
             
             rirIdx = 1;
-            for bandIdx = 1:nbands
+            for bandIdx = 1:nBands
                 % Do backwards integration and remove trailing zeroes
                 thisDecay = schroederDecays(:, bandIdx);
                 
@@ -100,19 +108,21 @@ classdef DecayFitNetToolbox < handle
             edcs = squeeze(edcs);
             scaleAdjustFactors.tAdjust = squeeze(tAdjustFactors);
             scaleAdjustFactors.nAdjust = squeeze(nAdjustFactors);
-            % Returns edcs
         end
         
-        function [t_prediction, a_prediction, n_prediction] = estimate_parameters(obj, rir, do_preprocess, do_scale_adjustment)
+        function [t_prediction, a_prediction, n_prediction] = estimate_parameters(obj, rir, do_preprocess, do_scale_adjustment, includeResidualBands)
             if nargin < 3
                 do_preprocess = true;
             end
             if nargin < 4
                 do_scale_adjustment = false;
             end
+            if nargin < 5
+                includeResidualBands = false;
+            end
             
             if do_preprocess
-                [edcs, scaleAdjustFactors] = obj.preprocess(rir);
+                [edcs, scaleAdjustFactors] = obj.preprocess(rir, includeResidualBands);
             end
             
             % Forward pass of the DecayFitNet

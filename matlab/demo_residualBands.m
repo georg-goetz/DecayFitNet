@@ -30,7 +30,7 @@ fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', 
 
 %% Load model and estimate parameters
 net = DecayFitNetToolbox();
-[t_values, a_values, n_values] = net.estimate_parameters(rir, true, true);
+[t_values, a_values, n_values] = net.estimate_parameters(rir, true, true, true);
 disp('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(t_values)
 disp('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====') 
@@ -38,7 +38,7 @@ disp(a_values)
 disp('==== Estimated N values (linear scale): ====') 
 disp(n_values)
 
-true_edcs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true);
+true_edcs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true, true);
 time_axis = linspace(0, (size(true_edcs,1) - 1) / fs, size(true_edcs,1) );
 estimated_edcs = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis).';
 
@@ -64,12 +64,14 @@ ylim([-80, 0])
 figure;
 hold on;
 cmap = parula(size(true_edcs, 2));
-legendStr = {'Measured EDC, 125 Hz', 'DecayFitNet fit, 125 Hz', ...
+legendStr = {'Measured EDC, Lowpass 125 Hz', 'DecayFitNet fit, Lowpass 125 Hz', ...
+    'Measured EDC, 125 Hz', 'DecayFitNet fit, 125 Hz', ...
     'Measured EDC, 250 Hz', 'DecayFitNet fit, 250 Hz',...
     'Measured EDC, 500 Hz', 'DecayFitNet fit, 500 Hz',...
     'Measured EDC, 1 kHz', 'DecayFitNet fit, 1 kHz',...
     'Measured EDC, 2 kHz', 'DecayFitNet fit, 2 kHz',...
-    'Measured EDC, 4 kHz', 'DecayFitNet fit, 4 kHz'};
+    'Measured EDC, 4 kHz', 'DecayFitNet fit, 4 kHz', ...
+    'Measured EDC, Highpass 4 kHz', 'DecayFitNet fit, Highpass 4 kHz'};
 L = round(0.95*size(true_edcs, 1)); % discard last 5 percent
 allMSE = zeros(size(true_edcs, 2), 1);
 for bandIdx=1:size(true_edcs, 2)
