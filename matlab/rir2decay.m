@@ -54,8 +54,8 @@ octFilBank = octaveFilterBank('1 octave',fs, ...
 rirFBands = octFilBank(rir);
 
 if includeResidualBands == true
-    rirLowpass = lowpass(rir, fBands(1), fs);
-    rirHighpass = highpass(rir, fBands(end), fs);
+    rirLowpass = lowpass(rir, fBands(1)/sqrt(2), fs);
+    rirHighpass = highpass(rir, fBands(end)*sqrt(2), fs);
     
     rirFBands = [rirLowpass, rirFBands, rirHighpass];
     numBands = numBands + 2;
