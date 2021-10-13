@@ -3,7 +3,8 @@ classdef DecayFitNetToolbox < handle
     properties
         output_size = 2400  % Timesteps of downsampled RIRs
         filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-        version = '0.0.4'
+        nSlopes
+        version = '0.0.6'
         sample_rate
         normalization
         PATH_ONNX
@@ -12,20 +13,40 @@ classdef DecayFitNetToolbox < handle
     end
     
     methods
-        function obj = DecayFitNetToolbox(sample_rate, normalization)
+        function obj = DecayFitNetToolbox(nSlopes, sampleRate, normalization)
             if nargin < 1
-                sample_rate = 48000;
+                nSlopes = 0;
             end
             if nargin < 2
+                sampleRate = 48000;
+            end
+            if nargin < 3
                 normalization = true;
             end
                 
-            obj.sample_rate = sample_rate;
+            obj.sample_rate = sampleRate;
             obj.normalization = normalization;
+            obj.nSlopes = nSlopes;
             
             % Load onnx model
             [thisDir, ~, ~] = fileparts(mfilename('fullpath'));
             obj.PATH_ONNX = fullfile(thisDir, '..', 'model');
+            
+            if obj.nSlopes == 0
+                % infer number of slopes with network
+                slopeMode = '';
+            elseif obj.nSlopes == 1
+                % fit exactly 1 slope plus noise
+                slopeMode = '1slopes_';
+            elseif obj.nSlopes == 2
+                % fit exactly 2 slopes plus noise
+                slopeMode = '2slopes_';
+            elseif obj.nSlopes == 3
+                % fit exactly 3 slopes plus noise
+                slopeMode = '3slopes_';
+            else
+                error('Please specify a valid number of slopes to be predicted by the network (nSlopes=1,2,3 for 1,2,3 slopes plus noise, respectively, or nSlopes=0 to let the network infer the number of slopes [max 3 slopes]).');
+            end
             
             % FAILS:
             % ONNX network with multiple outputs is not supported. Instead, use 'importONNXLayers' with 'ImportWeights' set to true.
@@ -37,13 +58,13 @@ classdef DecayFitNetToolbox < handle
             % obj.onnx_model = importONNXLayers(fullfile(obj.PATH_ONNX, 'DecayFitNet_v9.onnx'),'ImportWeights',true)  % Fails due to unsupported functions
             
             % Load ONNX model:
-            if exist('DecayFitNet_model.mat', 'file')
-                disp('Loading precompiled model DecayFitNet_model.mat')
-                obj.onnx_model = load('DecayFitNet_model.mat').tmp;
+            if exist(sprintf('DecayFitNet_%smodel.mat', slopeMode), 'file')
+                fprintf('Loading precompiled model DecayFitNet_%smodel.mat\n', slopeMode)
+                obj.onnx_model = load(sprintf('DecayFitNet_%smodel.mat', slopeMode)).tmp;
             else
-                obj.onnx_model = importONNXFunction(fullfile(obj.PATH_ONNX, 'DecayFitNet_v9.onnx'), 'DecayFitNet_model');
+                obj.onnx_model = importONNXFunction(fullfile(obj.PATH_ONNX, sprintf('DecayFitNet_%sv9.onnx', slopeMode)), sprintf('DecayFitNet_%smodel', slopeMode));
                 tmp = obj.onnx_model;
-                save('DecayFitNet_model.mat', 'tmp');
+                save(sprintf('DecayFitNet_%smodel.mat', slopeMode), 'tmp');
             end
             [~, msgid] = lastwarn;
             if strcmp(msgid, 'MATLAB:load:cannotInstantiateLoadedVariable')
@@ -53,7 +74,7 @@ classdef DecayFitNetToolbox < handle
             disp(obj.onnx_model)
             %[output, x66, x69, x72, state] = test_DecayFitNet(signal, '');
             
-            fid = py.open(fullfile(obj.PATH_ONNX, 'input_transform_p2.pkl'),'rb');
+            fid = py.open(fullfile(obj.PATH_ONNX, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
             obj.input_transform = py.pickle.load(fid);
         end
                 
