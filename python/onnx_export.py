@@ -6,29 +6,8 @@ import torch.onnx
 import toolbox.core as core
 import toolbox.utils as utils
 
-
-## NOTES:
-# Pre processing:
-# 	Load impulse  or path to impulse
-# 	Filter bank
-# 	Backwards integration (cut arway at -140 db)
-# 	Downsampling to 2400 samples  (pad with last value)
-# 	Ampltiude2DB
-# 	Normalization (wtih training data parameters)
-#
-# Reshaping freq bands to batch size.
-#
-# Output:
-# 	1 fitting per octave band ( 3 t , 3 a, 1 noise)
-# 	Reshape output if multiple freq bands
-# 	MSE of EDC fit (generate_synthetic_edc() net --> EDC)
-#
-# Plots:
-# 	Input EDCs
-# 	Output EDCs
-#
-#
-
+# Exports DecayFitNet with exactly N Slopes to ONNX
+# Important: MATLAB only works with ONNX 9 and pickle v2, Python works with ONNX 10 and regular pickle
 
 # Hyperparemeters fron the training
 UNITS_PER_LAYER = 1500
@@ -90,6 +69,7 @@ def export_input_transform2matlab(protocol=4):
 
 if __name__ == '__main__':
     export_onnx(onnx_version=9)
+    export_onnx(onnx_version=10)
     print('Finished exporting DecayFitNet to ONNX file.')
     export_input_transform2matlab(protocol=2)
     print('Finished exporting input transform file.')

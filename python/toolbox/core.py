@@ -172,6 +172,71 @@ class DecayFitNetLinear(nn.Module):
         return t, a, n_exponent, n_slopes
 
 
+class DecayFitNetLinearExactlyNSlopes(nn.Module):
+    def __init__(self, n_slopes, n_max_units, n_filters, n_layers, relu_slope, dropout, reduction_per_layer, device):
+        super(DecayFitNetLinearExactlyNSlopes, self).__init__()
+
+        self.n_slopes = n_slopes
+        self.device = device
+
+        self.activation = nn.LeakyReLU(relu_slope)
+        self.dropout = nn.Dropout(dropout)
+
+        # Base Network
+        self.conv1 = nn.Conv1d(1, n_filters, kernel_size=13, padding=6)
+        self.maxpool1 = nn.MaxPool1d(10)
+        self.conv2 = nn.Conv1d(n_filters, n_filters*2, kernel_size=7, padding=3)
+        self.maxpool2 = nn.MaxPool1d(8)
+        self.conv3 = nn.Conv1d(n_filters*2, n_filters*4, kernel_size=7, padding=3)
+        self.maxpool3 = nn.MaxPool1d(6)
+        self.input = nn.Linear(5*n_filters*4, n_max_units)
+
+        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer**i)),
+                                                round(n_max_units * (reduction_per_layer**(i+1)))) for i in range(n_layers-1)])
+
+        # T_vals
+        self.final1_t = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final2_t = nn.Linear(50, n_slopes)
+
+        # A_vals
+        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final2_a = nn.Linear(50, n_slopes)
+
+        # Noise
+        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final2_n = nn.Linear(50, 1)
+
+    def forward(self, edcs):
+        """
+        Args:
+
+        Returns:
+        """
+
+        # Base network
+        x = self.maxpool1(self.activation(self.conv1(edcs.unsqueeze(1))))
+        x = self.maxpool2(self.activation(self.conv2(x)))
+        x = self.maxpool3(self.activation(self.conv3(x)))
+        x = self.activation(self.input(self.dropout(x.view(edcs.shape[0], -1))))
+        for layer in self.linears:
+            x = layer(x)
+            x = self.activation(x)
+
+        # T_vals
+        t = self.activation(self.final1_t(x))
+        t = torch.pow(self.final2_t(t), 2.0) + 0.01
+
+        # A_vals
+        a = self.activation(self.final1_a(x))
+        a = torch.pow(self.final2_a(a), 2.0) + 1e-16
+
+        # Noise
+        n_exponent = self.activation(self.final1_n(x))
+        n_exponent = self.final2_n(n_exponent)
+
+        return t, a, n_exponent
+
+
 class FilterByOctaves(nn.Module):
     """Generates an octave wide filterbank and filters tensors.
 
