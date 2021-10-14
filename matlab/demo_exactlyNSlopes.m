@@ -5,7 +5,7 @@ addpath(genpath('octave'));
 %% Parameters
 audio_path = '../model';  %local path
 rir_fname = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
-nSlopes = 0; % predict exactly nSlopes slopes plus a noise term
+nSlopes = 1; % predict exactly nSlopes slopes plus a noise term
 
 fadeout_length = 0;  % in secs
 %% Load an impulse
