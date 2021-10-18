@@ -51,13 +51,15 @@ numBands = numel(fBands);
 rirFBands = zeros(length(rir), numBands);
 for bIdx = 1:numBands
     thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
-    bCoeffsFilt = fir1(fs/2, thisBand/fs*2);
+    fprintf('Processing the band with center frequency %d Hz. \n', fBands(bIdx));
+    bCoeffsFilt = fir1(fs/4, thisBand/fs*2);
     rirFBands(:,bIdx) = filtfilt(bCoeffsFilt, 1, rir);
 end
 
 if includeResidualBands == true
-    bCoeffsLowpass = fir1(fs/2, (1/sqrt(2))*fBands(1)/fs*2, 'low'); 
-    bCoeffsHighpass = fir1(fs/2, sqrt(2)*fBands(end)/fs*2, 'high'); 
+    disp('Processing lowpass and highpass bands.');
+    bCoeffsLowpass = fir1(fs/4, (1/sqrt(2))*fBands(1)/fs*2, 'low'); 
+    bCoeffsHighpass = fir1(fs/4, sqrt(2)*fBands(end)/fs*2, 'high'); 
     
     rirLowpass = filtfilt(bCoeffsLowpass, 1, rir);
     rirHighpass = filtfilt(bCoeffsHighpass, 1, rir);
