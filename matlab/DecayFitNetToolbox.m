@@ -5,7 +5,7 @@ classdef DecayFitNetToolbox < handle
         sample_rate
     end
     properties (SetAccess = private)
-        version = '0.0.6'
+        version = '0.0.7'
         output_size = 2400  % Timesteps of downsampled RIRs
         nSlopes
         PATH_ONNX

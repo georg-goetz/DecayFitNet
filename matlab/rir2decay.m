@@ -48,14 +48,19 @@ end
 numBands = numel(fBands);
 
 % Apply octave band filters to RIR, order=3
-octFilBank = octaveFilterBank('1 octave',fs, ...
-                              'FrequencyRange',fBands([1, end]), ...
-                              'FilterOrder', 8);
-rirFBands = octFilBank(rir);
+rirFBands = zeros(length(rir), numBands);
+for bIdx = 1:numBands
+    thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
+    bCoeffsFilt = fir1(fs/2, thisBand/fs*2);
+    rirFBands(:,bIdx) = filtfilt(bCoeffsFilt, 1, rir);
+end
 
 if includeResidualBands == true
-    rirLowpass = lowpass(rir, fBands(1)/sqrt(2), fs);
-    rirHighpass = highpass(rir, fBands(end)*sqrt(2), fs);
+    bCoeffsLowpass = fir1(fs/2, (1/sqrt(2))*fBands(1)/fs*2, 'low'); 
+    bCoeffsHighpass = fir1(fs/2, sqrt(2)*fBands(end)/fs*2, 'high'); 
+    
+    rirLowpass = filtfilt(bCoeffsLowpass, 1, rir);
+    rirHighpass = filtfilt(bCoeffsHighpass, 1, rir);
     
     rirFBands = [rirLowpass, rirFBands, rirHighpass];
     numBands = numBands + 2;
