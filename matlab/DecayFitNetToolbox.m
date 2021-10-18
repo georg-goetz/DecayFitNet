@@ -99,20 +99,20 @@ classdef DecayFitNetToolbox < handle
             for bandIdx = 1:nBands
                 % Do backwards integration and remove trailing zeroes
                 thisDecay = schroederDecays(:, bandIdx);
-                
-                % Calculate adjustment factors for t and n predictions
-                tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sample_rate);
-                nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / 2400;
-
-                % Discard last 5%
-                thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
-                
+                                
                 % Convert to dB and clamp at -140dB
                 thisDecay = pow2db(thisDecay);
                 thisLength = find(thisDecay < -140, 1);
                 if ~isempty(thisLength)
                     thisDecay = thisDecay(1:thisLength);
                 end
+                
+                % Calculate adjustment factors for t and n predictions
+                tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sample_rate);
+                nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / 2400;
+                
+                % Discard last 5%
+                thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
 
                 % Downsample to obj.output_size (default = 2400) samples
                 dsFactor = floor(length(thisDecay)/obj.output_size);
