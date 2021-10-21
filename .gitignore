@@ -23,3 +23,15 @@ matlab/DecayFitNet_3slopes_model.mat
 matlab/DecayFitNet_model.m
 
 matlab/DecayFitNet_model.mat
+
+matlab/DecayFitNet_1slopes_offset_model.m
+
+matlab/DecayFitNet_1slopes_offset_model.mat
+
+matlab/DecayFitNet_2slopes_offset_model.m
+
+matlab/DecayFitNet_2slopes_offset_model.mat
+
+matlab/DecayFitNet_3slopes_offset_model.m
+
+matlab/DecayFitNet_3slopes_offset_model.mat
