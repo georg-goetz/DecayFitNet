@@ -45,7 +45,7 @@ classdef DecayFitNetToolbox < handle
             else
                 error('Please specify a valid number of slopes to be predicted by the network (nSlopes=1,2,3 for 1,2,3 slopes plus noise, respectively, or nSlopes=0 to let the network infer the number of slopes [max 3 slopes]).');
             end
-            obj.networkName = sprintf('DecayFitNet_%s', slopeMode);
+            obj.networkName = sprintf('DecayFitNet_%soffset_', slopeMode);
             
             % FAILS:
             % ONNX network with multiple outputs is not supported. Instead, use 'importONNXLayers' with 'ImportWeights' set to true.
@@ -73,7 +73,7 @@ classdef DecayFitNetToolbox < handle
             disp(obj.onnx_model)
             %[output, x66, x69, x72, state] = test_DecayFitNet(signal, '');
             
-            fid = py.open(fullfile(obj.PATH_ONNX, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
+            fid = py.open(fullfile(obj.PATH_ONNX, sprintf('input_transform_%soffset_p2.pkl', slopeMode)),'rb');
             obj.input_transform = py.pickle.load(fid);
         end
                 
