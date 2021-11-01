@@ -77,7 +77,7 @@ classdef DecayFitNetToolbox < handle
             obj.input_transform = py.pickle.load(fid);
         end
                 
-        function [edcs, scaleAdjustFactors] = preprocess(obj, signal, includeResidualBands)
+        function [edcs, scaleAdjustFactors, normVals] = preprocess(obj, signal, includeResidualBands)
             if nargin < 3
                 includeResidualBands = false;
             end
@@ -93,7 +93,7 @@ classdef DecayFitNetToolbox < handle
             nAdjustFactors = zeros(1, nRirs, nBands);
 
             % Extract decays
-            schroederDecays = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true, true, includeResidualBands);
+            [schroederDecays, normVals] = rir2decay(signal, obj.sample_rate, obj.filter_frequencies, true, true, true, includeResidualBands);
             
             rirIdx = 1;
             for bandIdx = 1:nBands
@@ -128,7 +128,7 @@ classdef DecayFitNetToolbox < handle
             scaleAdjustFactors.nAdjust = squeeze(nAdjustFactors);
         end
         
-        function [t_prediction, a_prediction, n_prediction] = estimate_parameters(obj, rir, do_preprocess, do_scale_adjustment, includeResidualBands)
+        function [t_prediction, a_prediction, n_prediction, normVals] = estimate_parameters(obj, rir, do_preprocess, do_scale_adjustment, includeResidualBands)
             if nargin < 3
                 do_preprocess = true;
             end
@@ -140,7 +140,9 @@ classdef DecayFitNetToolbox < handle
             end
             
             if do_preprocess
-                [edcs, scaleAdjustFactors] = obj.preprocess(rir, includeResidualBands);
+                [edcs, scaleAdjustFactors, normVals] = obj.preprocess(rir, includeResidualBands);
+            else
+                normVals = [];
             end
             
             % Forward pass of the DecayFitNet
