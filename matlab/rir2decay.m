@@ -46,12 +46,12 @@ if ~exist('includeResidualBands', 'var')
 end
 
 numBands = numel(fBands);
-
+fprintf('Processing the band with center frequency: ');
 % Apply octave band filters to RIR, order=3
 rirFBands = zeros(length(rir), numBands);
 for bIdx = 1:numBands
     thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
-    fprintf('Processing the band with center frequency %d Hz. \n', fBands(bIdx));
+    fprintf('%d Hz ', fBands(bIdx));
     
 %     % FIR
 %     bCoeffsFilt = fir1(fs/4, thisBand/fs*2);
