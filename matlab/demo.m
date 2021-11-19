@@ -30,7 +30,7 @@ fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', 
 
 %% Load model and estimate parameters
 net = DecayFitNetToolbox();
-[t_values, a_values, n_values] = net.estimate_parameters(rir, true, true);
+[t_values, a_values, n_values] = net.estimate_parameters(rir, true, true, false); % flags: do_preprocess, do_scale_adjustment, includeResidualBands
 disp('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(t_values)
 disp('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====') 
@@ -38,28 +38,9 @@ disp(a_values)
 disp('==== Estimated N values (linear scale): ====') 
 disp(n_values)
 
-true_edcs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true);
+true_edcs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); 
 time_axis = linspace(0, (size(true_edcs,1) - 1) / fs, size(true_edcs,1) );
 estimated_edcs = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis).';
-
-f = figure(2);
-subplot(3,1,1);
-utils.plot_waveform(rir, fs, 'Original RIR', f)
-ylim([-1, 1])
-
-subplot(3,1,2);
-%utils.plot_waveform(10 .* log10(true_edc), fs, 'True EDC', f)
-plot(time_axis, pow2db(true_edcs))
-title('True EDC')
-ylim([-80, 0])
-subplot(3,1,3);
-%utils.plot_waveform(estimated_edc, fs, 'Estimated EDC', f)
-plot(time_axis, pow2db(estimated_edcs))
-title('Estimated EDC')
-%ax = gca;
-%ax.YScale = 'log';
-ylim([-80, 0])
-
 
 figure;
 hold on;

@@ -51,52 +51,28 @@ numBands = numel(fBands);
 rirFBands = zeros(length(rir), numBands);
 for bIdx = 1:numBands
     thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
-    fprintf('Processing the band with center frequency %d Hz. \n', fBands(bIdx));
-    
-%     % FIR
-%     bCoeffsFilt = fir1(fs/4, thisBand/fs*2);
-%     rirFBands(:,bIdx) = filtfilt(bCoeffsFilt, 1, rir);
-
+   
     % IIR
     [z, p, k] = butter(5, thisBand/fs*2, 'bandpass');
-    %     [z, p, k] = cheby1(3, 1, thisBand/fs*2, 'bandpass');
-    
-    % Variant 1: Zero phase filtering
+  
+    % Zero phase filtering
     [sos, g] = zp2sos(z, p, k);
     rirFBands(:, bIdx) = filtfilt(sos, g, rir);
-    
-%     % Variant 2: Regular IIR filtering
-%     sos = zp2sos(z, p, k);
-%     rirFBands(:, bIdx) = sosfilt(sos, rir);
 end
 
-if includeResidualBands == true
-    disp('Processing lowpass and highpass bands.');
-    
-%     % FIR
-%     bCoeffsLowpass = fir1(fs/4, (1/sqrt(2))*fBands(1)/fs*2, 'low'); 
-%     bCoeffsHighpass = fir1(fs/4, sqrt(2)*fBands(end)/fs*2, 'high'); 
-%     rirLowpass = filtfilt(bCoeffsLowpass, 1, rir);
-%     rirHighpass = filtfilt(bCoeffsHighpass, 1, rir);
-
+% Residual bands = everything below and above the octave bandpass
+% filters
+if includeResidualBands == true    
     % IIR
     [zLow, pLow, kLow] = butter(5, (1/sqrt(2))*fBands(1)/fs*2);
     [zHigh, pHigh, kHigh] = butter(5, sqrt(2)*fBands(end)/fs*2, 'high');
-%     [zLow, pLow, kLow] = cheby1(3, 1, (1/sqrt(2))*fBands(1)/fs*2);
-%     [zHigh, pHigh, kHigh] = cheby1(3, 1, sqrt(2)*fBands(end)/fs*2, 'high');
         
-    % Variant 1: Zero phase filtering
+    % Zero phase filtering
     [sosLow, gLow] = zp2sos(zLow, pLow, kLow);
     [sosHigh, gHigh] = zp2sos(zHigh, pHigh, kHigh);
     rirLowpass = filtfilt(sosLow, gLow, rir);
     rirHighpass = filtfilt(sosHigh, gHigh, rir);
-    
-%     % Variant2: Regular filtering
-%     sosLow = zp2sos(zLow, pLow, kLow);
-%     sosHigh = zp2sos(zHigh, pHigh, kHigh);
-%     rirLowpass = sosfilt(sosLow, rir);
-%     rirHighpass = sosfilt(sosHigh, rir);
-    
+     
     rirFBands = [rirLowpass, rirFBands, rirHighpass];
     numBands = numBands + 2;
 end
