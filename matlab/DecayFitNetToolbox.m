@@ -10,7 +10,7 @@ classdef DecayFitNetToolbox < handle
     end
     properties (SetAccess = private)
         version = '0.1.0'
-        output_size = 100  % Timesteps of downsampled RIRs
+        output_size = 100  % Timesteps of resampled RIRs
         nSlopes
         PATH_ONNX
         onnx_model
