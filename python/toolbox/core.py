@@ -32,11 +32,11 @@ class DecayDataset(Dataset):
 
         if not testset_flag:
             # Load EDCs
-            f_edcs = h5py.File(datasets_dir + 'edcs.mat', 'r')
+            f_edcs = h5py.File(datasets_dir + 'edcs_slim.mat', 'r')
             edcs = np.array(f_edcs.get('edcs'))
 
             # Load noise values
-            f_noise_levels = h5py.File(datasets_dir + 'noiseLevels.mat', 'r')
+            f_noise_levels = h5py.File(datasets_dir + 'noiseLevels_slim.mat', 'r')
             noise_levels = np.array(f_noise_levels.get('noiseLevels'))
 
             # Get EDCs into pytorch format
@@ -44,7 +44,7 @@ class DecayDataset(Dataset):
             self.edcs = edcs[:, (n_slopes_min - 1) * edcs_per_slope:n_slopes_max * edcs_per_slope]
 
             # Put EDCs into dB
-            edcs_db = 10 * torch.log10(self.edcs)
+            edcs_db = 10*torch.log10(self.edcs)
             assert not torch.any(torch.isnan(edcs_db)), 'NaN values in db EDCs'
 
             # Normalize dB values to lie between -1 and 1 (input scaling)
@@ -58,22 +58,22 @@ class DecayDataset(Dataset):
 
             # Generate vector that specifies how many slopes are in every EDC
             self.n_slopes = torch.zeros((1, self.edcs.shape[1]))
-            for slope_idx in range(n_slopes_min, n_slopes_max + 1):
+            for slope_idx in range(n_slopes_min, n_slopes_max+1):
                 self.n_slopes[0, (slope_idx - 1) * edcs_per_slope:slope_idx * edcs_per_slope] = slope_idx - 1
             self.n_slopes = self.n_slopes.long()
 
             # Noise level values are used in training for the noise loss
             noise_levels = torch.from_numpy(noise_levels).float()
-            self.noise_levels = noise_levels[:, (n_slopes_min - 1) * edcs_per_slope:n_slopes_max * edcs_per_slope]
+            self.noise_levels = noise_levels[:, (n_slopes_min-1)*edcs_per_slope:n_slopes_max*edcs_per_slope]
 
             assert self.edcs.shape[1] == self.noise_levels.shape[1], 'More EDCs than noise_levels'
         else:
             if testset_name == 'summer830':
-                f_edcs = h5py.File(datasets_dir + 'summer830/edcs.mat', 'r')
-                edcs = torch.from_numpy(np.array(f_edcs.get('summer830edcs/edcs'))).float().view(-1, 2400).T
+                f_edcs = h5py.File(datasets_dir + 'summer830/edcs_slim.mat', 'r')
+                edcs = torch.from_numpy(np.array(f_edcs.get('summer830edcs/edcs'))).float().view(-1, 100).T
             elif testset_name == 'roomtransition':
-                f_edcs = h5py.File(datasets_dir + 'roomtransition/edcs.mat', 'r')
-                edcs = torch.from_numpy(np.array(f_edcs.get('roomTransitionEdcs/edcs'))).float().view(-1, 2400).T
+                f_edcs = h5py.File(datasets_dir + 'roomtransition/edcs_slim.mat', 'r')
+                edcs = torch.from_numpy(np.array(f_edcs.get('roomTransitionEdcs/edcs'))).float().view(-1, 100).T
             else:
                 raise NotImplementedError('Unknown testset.')
 
@@ -110,31 +110,30 @@ class DecayFitNetLinear(nn.Module):
 
         # Base Network
         self.conv1 = nn.Conv1d(1, n_filters, kernel_size=13, padding=6)
-        self.maxpool1 = nn.MaxPool1d(10)
-        self.conv2 = nn.Conv1d(n_filters, n_filters * 2, kernel_size=7, padding=3)
-        self.maxpool2 = nn.MaxPool1d(8)
-        self.conv3 = nn.Conv1d(n_filters * 2, n_filters * 4, kernel_size=7, padding=3)
-        self.maxpool3 = nn.MaxPool1d(6)
-        self.input = nn.Linear(5 * n_filters * 4, n_max_units)
+        self.maxpool1 = nn.MaxPool1d(5)
+        self.conv2 = nn.Conv1d(n_filters, n_filters*2, kernel_size=7, padding=3)
+        self.maxpool2 = nn.MaxPool1d(5)
+        self.conv3 = nn.Conv1d(n_filters*2, n_filters*2, kernel_size=7, padding=3)
+        self.maxpool3 = nn.MaxPool1d(2)
+        self.input = nn.Linear(2*n_filters*2, n_max_units)
 
-        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer ** i)),
-                                                round(n_max_units * (reduction_per_layer ** (i + 1)))) for i in
-                                      range(n_layers - 1)])
+        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer**i)),
+                                                round(n_max_units * (reduction_per_layer**(i+1)))) for i in range(n_layers-1)])
 
         # T_vals
         self.final1_t = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_t = nn.Linear(50, n_slopes)
 
         # A_vals
-        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
         self.final2_a = nn.Linear(50, n_slopes)
 
         # Noise
-        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
         self.final2_n = nn.Linear(50, 1)
 
         # N Slopes
-        self.final1_n_slopes = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
+        self.final1_n_slopes = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
         self.final2_n_slopes = nn.Linear(50, n_slopes)
 
     def forward(self, edcs):
@@ -170,6 +169,7 @@ class DecayFitNetLinear(nn.Module):
         n_slopes = self.final2_n_slopes(n_slopes)
 
         return t, a, n_exponent, n_slopes
+
 
 
 class DecayFitNetLinearExactlyNSlopes(nn.Module):
@@ -410,7 +410,7 @@ class PreprocessRIR(nn.Module):
                  input_transform: Dict,
                  normalization: bool = True,
                  sample_rate: int = 48000,
-                 filter_frequencies: List[int] = [125, 250, 500, 1000, 2000, 4000], output_size: int = 2400):
+                 filter_frequencies: List[int] = [125, 250, 500, 1000, 2000, 4000], output_size: int = 100):
         super(PreprocessRIR, self).__init__()
         self.input_transform = input_transform
         self.filter_frequencies = filter_frequencies
@@ -530,20 +530,23 @@ def adjust_timescale(t_prediction, n_prediction, L_EDC, fs):
 
     # N value predictions have to be converted from exponent representation to actual value and adjusted for
     # the downsampling
-    n_adjust = L_EDC / 2400
+    n_adjust = L_EDC / 100
     n_prediction = n_prediction / n_adjust
 
     return t_prediction, n_prediction
 
 
-def edc_loss(t_vals_prediction, a_vals_prediction, n_vals_prediction, edcs_true, device, training_flag=True,
+def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, device, training_flag=True,
              plot_fit=False, apply_mean=True):
-    """ Computes the loss between an EDC generated with the estimated parameters and a target EDC. """
-    fs = 240
+    fs = 10
     l_edc = 10
 
     # Generate the t values that would be discarded as well, otherwise the models do not match.
-    t = (torch.linspace(0, l_edc * fs - 1, round((1 / 0.95) * l_edc * fs)) / fs).to(device)
+    t = (torch.linspace(0, l_edc * fs - 1, round((1/0.95)*l_edc * fs)) / fs).to(device)
+
+    # Clamp noise to reasonable values to avoid numerical problems and go from exponent to actual noise value
+    n_exp_prediction = torch.clamp(n_exp_prediction, -32, 32)
+    n_vals_prediction = torch.pow(10, n_exp_prediction)
 
     if training_flag:
         # use L1Loss in training
@@ -556,7 +559,7 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_vals_prediction, edcs_true,
 
     # discard last 5 percent (i.e. the step which is already done for the true EDC and the test datasets prior to
     # saving them to the .mat files that are loaded in the beginning of this script
-    edc_prediction = edc_prediction[:, 0:l_edc * fs]
+    edc_prediction = edc_prediction[:, 0:l_edc*fs]
 
     if plot_fit:
         for idx in range(0, edcs_true.shape[0]):

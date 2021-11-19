@@ -6,14 +6,14 @@ import torch.onnx
 import toolbox.core as core
 import toolbox.utils as utils
 
-# Exports DecayFitNet with exactly N Slopes to ONNX
+# Exports DecayFitNet to ONNX
 # Important: MATLAB only works with ONNX 9 and pickle v2, Python works with ONNX 10 and regular pickle
 
 # Hyperparemeters fron the training
-UNITS_PER_LAYER = 1500
+UNITS_PER_LAYER = 400
 DROPOUT = 0.0
 N_LAYERS = 3
-N_FILTER = 128
+N_FILTER = 64
 
 # Path to weights and export directory
 NETWORK_NAME = 'DecayFitNet.pth'
@@ -34,11 +34,11 @@ def export_onnx(onnx_version=10):
     """ Exports the pretrained model into ONNX format. """
     batch_size = 1
     channels = 1
-    timesteps = 2400
+    timesteps = 100
     net = get_net()
 
     # Input to the model
-    x = torch.randn(batch_size, timesteps, requires_grad=True)  # (batch_size, 2400), no channels
+    x = torch.randn(batch_size, timesteps, requires_grad=True)  # (batch_size, 100), no channels
     torch_out = net(x)
 
     # Export the model
