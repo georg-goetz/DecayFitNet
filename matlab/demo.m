@@ -3,13 +3,13 @@ close all; clear variables; clc; lastwarn('');
 addpath(genpath('octave'));
 
 %% Parameters
-audio_path = '../model';  %local path
-rir_fname = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
+audioPath = '../model';  %local path
+rirFName = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
 
-fadeout_length = 0;  % in secs
+fadeoutLength = 0;  % in secs
 %% Load an impulse
 
-[rir, fs] = audioread(fullfile(audio_path, rir_fname));
+[rir, fs] = audioread(fullfile(audioPath, rirFName));
 channels = size(rir, 2);
 
 % Keep only the first channel
@@ -19,8 +19,8 @@ if size(rir, 1) > 1 && length(size(rir)) > 1
 end
 
 % Delete potential fade-out windows
-if fadeout_length > 0
-    rir = rir(1:end + round(-fadeout_length*fs), :);
+if fadeoutLength > 0
+    rir = rir(1:end + round(-fadeoutLength*fs), :);
 end
 
 fprintf('The impulse has %d channels (before selecting the first one).\n', channels)
@@ -29,35 +29,37 @@ fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', 
 
 %% Load model and estimate parameters
 net = DecayFitNetToolbox();
-[t_values, a_values, n_values] = net.estimate_parameters(rir);
+[tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet] = net.estimateParameters(rir);
 disp('==== DecayFitNet: Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
-disp(t_values)
+disp(tVals_decayfitnet)
 disp('==== DecayFitNet: Estimated A values (linear scale, A=0 indicates an inactive slope): ====') 
-disp(a_values)
+disp(aVals_decayfitnet)
 disp('==== DecayFitNet: Estimated N values (linear scale): ====') 
-disp(n_values)
+disp(nVals_decayFitNet)
 
-true_edcs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); 
-time_axis = linspace(0, (size(true_edcs,1) - 1) / fs, size(true_edcs,1) );
-estimated_edcs = net.generate_synthetic_edcs(t_values, a_values, n_values, time_axis).';
+trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); 
+timeAxis = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs,1) );
+estimatedEDCs_decayfitnet = net.generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis).';
 
-figure;
+f = figure;
+f.Position = [150, 200, 1600, 600];
+subplot(1, 2, 1);
 hold on;
-cmap = parula(size(true_edcs, 2));
+cmap = parula(size(trueEDCs, 2));
 legendStr = {'Measured EDC, 125 Hz', 'DecayFitNet fit, 125 Hz', ...
     'Measured EDC, 250 Hz', 'DecayFitNet fit, 250 Hz',...
     'Measured EDC, 500 Hz', 'DecayFitNet fit, 500 Hz',...
     'Measured EDC, 1 kHz', 'DecayFitNet fit, 1 kHz',...
     'Measured EDC, 2 kHz', 'DecayFitNet fit, 2 kHz',...
     'Measured EDC, 4 kHz', 'DecayFitNet fit, 4 kHz'};
-L = round(0.95*size(true_edcs, 1)); % discard last 5 percent
-allMSE = zeros(size(true_edcs, 2), 1);
-for bandIdx=1:size(true_edcs, 2)
-    plot(time_axis(1:L), pow2db(true_edcs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
-    plot(time_axis(1:L), pow2db(estimated_edcs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
+L = round(0.95*size(trueEDCs, 1)); % discard last 5 percent
+allMSE = zeros(size(trueEDCs, 2), 1);
+for bandIdx=1:size(trueEDCs, 2)
+    plot(timeAxis(1:L), pow2db(trueEDCs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
+    plot(timeAxis(1:L), pow2db(estimatedEDCs_decayfitnet(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
     ylim([-60, 0]);
     
-    allMSE(bandIdx) = mseLoss(pow2db(true_edcs(1:L, bandIdx)), pow2db(estimated_edcs(1:L, bandIdx)));
+    allMSE(bandIdx) = mseLoss(pow2db(trueEDCs(1:L, bandIdx)), pow2db(estimatedEDCs_decayfitnet(1:L, bandIdx)));
 end
 legend(legendStr, 'Location', 'EastOutside');
 title('DecayFitNet: Measured vs. estimated EDC fits');
@@ -80,24 +82,24 @@ aCandidates = logspace(aRange(1), aRange(2), nPointsPerDim);
 nCandidates = logspace(nRange(1), nRange(2), nPointsPerDim);
 
 % Convert to dB
-true_edcs_db = pow2db(true_edcs);
+trueEDCs_db = pow2db(trueEDCs);
 
 % Resample to 100 samples, because Bayesian analysis only works on few
 % datapoints
-true_edcs_db = resample(true_edcs_db, 100, length(true_edcs_db), 0, 5);
-time_axis_ds = linspace(0, (size(true_edcs,1) - 1) / fs, size(true_edcs_db, 1) ).';
+trueEDCs_db = resample(trueEDCs_db, 100, length(trueEDCs_db), 0, 5);
+timeAxis_ds = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs_db, 1) ).';
 
-tVals_bayesian = zeros(3, size(true_edcs_db, 2));
-aVals_bayesian = zeros(3, size(true_edcs_db, 2));
-nVals_bayesian = zeros(1, size(true_edcs_db, 2));
+tVals_bayesian = zeros(3, size(trueEDCs_db, 2));
+aVals_bayesian = zeros(3, size(trueEDCs_db, 2));
+nVals_bayesian = zeros(1, size(trueEDCs_db, 2));
 
 % Do Bayesian decay analysis with slice sampling
-for bandIdx=1:size(true_edcs, 2)
-    [theseTVals, theseAVals, theseNVals] = bayesianDecayAnalysis_estimateParameters(true_edcs_db(:, bandIdx), modelOrders, tCandidates, aCandidates, nCandidates, nIterations, time_axis_ds);
+for bandIdx=1:size(trueEDCs, 2)
+    [theseTVals, theseAVals, theseNVals] = bayesianDecayAnalysis_estimateParameters(trueEDCs_db(:, bandIdx), modelOrders, tCandidates, aCandidates, nCandidates, nIterations, timeAxis_ds);
     predictedModelOrder = length(theseTVals);
     tVals_bayesian(1:predictedModelOrder, bandIdx) = theseTVals;
     aVals_bayesian(1:predictedModelOrder, bandIdx) = theseAVals;
-    nVals_bayesian(1, bandIdx) = theseNVals / length(true_edcs) * length(time_axis_ds); % rescale noise value to original sampling rate
+    nVals_bayesian(1, bandIdx) = theseNVals / length(trueEDCs) * length(timeAxis_ds); % rescale noise value to original sampling rate
 end
 
 disp('==== Bayesian analysis: Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
@@ -107,25 +109,25 @@ disp(aVals_bayesian)
 disp('==== Bayesian analysis: Estimated N values (linear scale): ====') 
 disp(nVals_bayesian)
 
-estimatedEdcs_bayesian = net.generate_synthetic_edcs(tVals_bayesian, aVals_bayesian, nVals_bayesian, time_axis).';
+estimatedEDCs_bayesian = net.generateSyntheticEDCs(tVals_bayesian, aVals_bayesian, nVals_bayesian, timeAxis).';
 
-figure;
+subplot(1, 2, 2);
 hold on;
-cmap = parula(size(true_edcs, 2));
+cmap = parula(size(trueEDCs, 2));
 legendStr = {'Measured EDC, 125 Hz', 'Bayesian fit, 125 Hz', ...
     'Measured EDC, 250 Hz', 'Bayesian fit, 250 Hz',...
     'Measured EDC, 500 Hz', 'Bayesian fit, 500 Hz',...
     'Measured EDC, 1 kHz', 'Bayesian fit, 1 kHz',...
     'Measured EDC, 2 kHz', 'Bayesian fit, 2 kHz',...
     'Measured EDC, 4 kHz', 'Bayesian fit, 4 kHz'};
-L = round(0.95*size(true_edcs, 1)); % discard last 5 percent
-allMSE = zeros(size(true_edcs, 2), 1);
-for bandIdx=1:size(true_edcs, 2)
-    plot(time_axis(1:L), pow2db(true_edcs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
-    plot(time_axis(1:L), pow2db(estimatedEdcs_bayesian(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
+L = round(0.95*size(trueEDCs, 1)); % discard last 5 percent
+allMSE = zeros(size(trueEDCs, 2), 1);
+for bandIdx=1:size(trueEDCs, 2)
+    plot(timeAxis(1:L), pow2db(trueEDCs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
+    plot(timeAxis(1:L), pow2db(estimatedEDCs_bayesian(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
     ylim([-60, 0]);
     
-    allMSE(bandIdx) = mseLoss(pow2db(true_edcs(1:L, bandIdx)), pow2db(estimatedEdcs_bayesian(1:L, bandIdx)));
+    allMSE(bandIdx) = mseLoss(pow2db(trueEDCs(1:L, bandIdx)), pow2db(estimatedEDCs_bayesian(1:L, bandIdx)));
 end
 legend(legendStr, 'Location', 'EastOutside');
 title('Bayesian decay analysis: Measured vs. estimated EDC fits');
