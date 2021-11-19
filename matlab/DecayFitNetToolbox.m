@@ -47,15 +47,6 @@ classdef DecayFitNetToolbox < handle
             end
             obj.networkName = sprintf('DecayFitNet_%s', slopeMode);
             
-            % FAILS:
-            % ONNX network with multiple outputs is not supported. Instead, use 'importONNXLayers' with 'ImportWeights' set to true.
-            % obj.onnx_model = importONNXNetwork(fullfile(obj.PATH_ONNX, 'DecayFitNet.onnx'),'OutputLayerType','regression');
-            
-            % FAILS:
-            % Warning: Unable to import some ONNX operators, because they are not supported. They have been replaced by placeholder layers. To find these layers, call the
-            % function findPlaceholderLayers on the returned object.
-            % obj.onnx_model = importONNXLayers(fullfile(obj.PATH_ONNX, 'DecayFitNet_v9.onnx'),'ImportWeights',true)  % Fails due to unsupported functions
-            
             % Load ONNX model:
             if exist([obj.networkName, 'model.mat'], 'file')
                 fprintf('Loading precompiled model %smodel.mat\n', obj.networkName)
@@ -71,8 +62,7 @@ classdef DecayFitNetToolbox < handle
             end
             
             disp(obj.onnx_model)
-            %[output, x66, x69, x72, state] = test_DecayFitNet(signal, '');
-            
+
             fid = py.open(fullfile(obj.PATH_ONNX, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
             obj.input_transform = py.pickle.load(fid);
         end
@@ -127,29 +117,18 @@ classdef DecayFitNetToolbox < handle
             scaleAdjustFactors.nAdjust = squeeze(nAdjustFactors);
         end
         
-        function [t_prediction, a_prediction, n_prediction] = estimate_parameters(obj, rir, do_preprocess, do_scale_adjustment, includeResidualBands)
+        function [t_prediction, a_prediction, n_prediction] = estimate_parameters(obj, rir, includeResidualBands)
             if nargin < 3
-                do_preprocess = true;
-            end
-            if nargin < 4
-                do_scale_adjustment = false;
-            end
-            if nargin < 5
                 includeResidualBands = false;
             end
             
-            if do_preprocess
-                [edcs, scaleAdjustFactors] = obj.preprocess(rir, includeResidualBands);
-            end
+            [edcs, scaleAdjustFactors] = obj.preprocess(rir, includeResidualBands);
             
             % Forward pass of the DecayFitNet
             net = str2func([obj.networkName, 'model']);
             [t_prediction, a_prediction, n_prediction, n_slopes_probabilities] = net(edcs, obj.onnx_model, 'InputDataPermutation', [2,1]);
             
-            if do_scale_adjustment
-                [t_prediction, a_prediction, n_prediction] = obj.postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, true, scaleAdjustFactors);
-            end
-            
+            [t_prediction, a_prediction, n_prediction] = obj.postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, true, scaleAdjustFactors);
         end
         
         function [t_prediction, a_prediction, n_prediction, n_slopes_prediction] = postprocess_parameters(obj, t_prediction, a_prediction, n_prediction, n_slopes_probabilities, sort_values, scaleAdjustFactors)
@@ -254,7 +233,7 @@ classdef DecayFitNetToolbox < handle
             last5 = round(0.95 * size(signal,1));
             
             output = zeros(last5, size(signal,2));
-            for channel = [1 : size(signal,2)]
+            for channel = 1:size(signal,2)
                 tmp = signal(:,channel);
                 tmp(last5+1:end) = [];
                 output(:,channel) = tmp;
