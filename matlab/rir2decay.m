@@ -36,7 +36,7 @@ if ~exist('doBackwardsInt', 'var')
     doBackwardsInt = false;
 end
 if ~exist('analyseFullRIR', 'var')
-    analyseFullRIR = false;
+    analyseFullRIR = true;
 end
 if ~exist('normalize', 'var')
     normalize = false;
@@ -45,37 +45,10 @@ if ~exist('includeResidualBands', 'var')
     includeResidualBands = false;
 end
 
-numBands = numel(fBands);
+numBands = numel(fBands) + includeResidualBands*2;
 
 % Apply octave band filters to RIR, order=3
-rirFBands = zeros(length(rir), numBands);
-for bIdx = 1:numBands
-    thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
-   
-    % IIR
-    [z, p, k] = butter(5, thisBand/fs*2, 'bandpass');
-  
-    % Zero phase filtering
-    [sos, g] = zp2sos(z, p, k);
-    rirFBands(:, bIdx) = filtfilt(sos, g, rir);
-end
-
-% Residual bands = everything below and above the octave bandpass
-% filters
-if includeResidualBands == true    
-    % IIR
-    [zLow, pLow, kLow] = butter(5, (1/sqrt(2))*fBands(1)/fs*2);
-    [zHigh, pHigh, kHigh] = butter(5, sqrt(2)*fBands(end)/fs*2, 'high');
-        
-    % Zero phase filtering
-    [sosLow, gLow] = zp2sos(zLow, pLow, kLow);
-    [sosHigh, gHigh] = zp2sos(zHigh, pHigh, kHigh);
-    rirLowpass = filtfilt(sosLow, gLow, rir);
-    rirHighpass = filtfilt(sosHigh, gHigh, rir);
-     
-    rirFBands = [rirLowpass, rirFBands, rirHighpass];
-    numBands = numBands + 2;
-end
+rirFBands = octaveFiltering(rir, fs, fBands, includeResidualBands);
 
 % detect peak in rir, because the decay will be calculated from that point
 % onwards
