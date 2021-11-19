@@ -30,7 +30,7 @@ fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', 
 
 %% Load model and estimate parameters
 net = DecayFitNetToolbox();
-[t_values, a_values, n_values] = net.estimate_parameters(rir, false); % flags: includeResidualBands
+[t_values, a_values, n_values] = net.estimate_parameters(rir);
 disp('==== Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(t_values)
 disp('==== Estimated A values (linear scale, A=0 indicates an inactive slope): ====') 

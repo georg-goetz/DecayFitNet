@@ -1,4 +1,4 @@
-function [decayFBands, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, analyseFullRIR, normalize, includeResidualBands)
+function [decayFBands, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, analyseFullRIR, normalize)
 % calculates energy decay curves in octave-bands from a room impulse response
 %
 % Inputs:
@@ -16,10 +16,6 @@ function [decayFBands, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, an
 %                   because the analysis is carried out starting from the 
 %                   maximum of the full impulse response and not from the 
 %                   maxima in the frequency bands
-%   includeResidualBands    - set this to true if you want the function to
-%                           also return EDCs for the lowpass band below the
-%                           first octave band and the highpass band above
-%                           the last octave band
 %
 % Outputs:
 %   decayFBands     - energy decay curves in specified octave-bands and the 
@@ -41,14 +37,11 @@ end
 if ~exist('normalize', 'var')
     normalize = false;
 end
-if ~exist('includeResidualBands', 'var')
-    includeResidualBands = false;
-end
 
-numBands = numel(fBands) + includeResidualBands*2;
+numBands = numel(fBands);
 
 % Apply octave band filters to RIR, order=3
-rirFBands = octaveFiltering(rir, fs, fBands, includeResidualBands);
+rirFBands = octaveFiltering(rir, fs, fBands);
 
 % detect peak in rir, because the decay will be calculated from that point
 % onwards
