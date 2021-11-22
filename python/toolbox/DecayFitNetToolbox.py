@@ -31,14 +31,14 @@ from .core import PreprocessRIR, generate_synthetic_edc, postprocess_parameters,
 
 class DecayFitNetToolbox:
     output_size = 100  # Timesteps of downsampled RIRs
-    filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
     __version = '0.1.0'
 
-    def __init__(self, sample_rate: int = 48000, backend: str = 'pytorch',
-                 device: torch.device = torch.device('cpu')):
+    def __init__(self, sample_rate: int = 48000, filter_frequencies=[125, 250, 500, 1000, 2000, 4000],
+                 backend: str = 'pytorch', device: torch.device = torch.device('cpu')):
         self.backend = backend
         self.fs = sample_rate
         self.device = device
+        self._filter_frequencies = filter_frequencies
 
         PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
 
@@ -49,14 +49,14 @@ class DecayFitNetToolbox:
 
         self._preprocess = PreprocessRIR(input_transform=self.input_transform,
                                          sample_rate=self.fs,
-                                         filter_frequencies=self.filter_frequencies,
+                                         filter_frequencies=self._filter_frequencies,
                                          output_size=self.output_size)
 
     def __repr__(self):
         frmt = f'DecayFitNetToolbox {self.__version}  \n'
         frmt += f'Input fs = {self.fs} \n'
         frmt += f'Output_size = {self.output_size} \n'
-        frmt += f'Filter freqs = {self.filter_frequencies} \n'
+        frmt += f'Filter freqs = {self._filter_frequencies} \n'
         #frmt += f'Using model: {self._onnx_model}'
 
         return frmt
@@ -64,6 +64,10 @@ class DecayFitNetToolbox:
     @staticmethod
     def _to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+    def set_filter_frequencies(self, filter_frequencies):
+        self._filter_frequencies = filter_frequencies
+        self._preprocess.set_filter_frequencies(filter_frequencies)
 
     def preprocess(self, signal: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Preprocess an input signal to extract EDCs"""

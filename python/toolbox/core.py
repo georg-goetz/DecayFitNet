@@ -247,47 +247,34 @@ class FilterByOctaves(nn.Module):
     This is useful to get the decay curves of RIRs.
     """
 
-    def __init__(self, center_freqs=[125, 250, 500, 1000, 2000, 4000], order=3, fs=48000, backend='scipy'):
+    def __init__(self, center_freqs=[125, 250, 500, 1000, 2000, 4000], order=5, fs=48000, backend='scipy'):
         super(FilterByOctaves, self).__init__()
 
-        self.center_freqs = center_freqs
+        self._center_freqs = center_freqs
         self.order = order
         self.fs = fs
         self.backend = backend
-        self.sos = []
-        for freq in self.center_freqs:
-            tmp_sos = self._get_octave_filter(freq, self.fs, self.order)
-            self.sos.append(tmp_sos)
-
-    ## TODO remove torch back end?
-    def _forward_torch(self, x):
-        out = []
-        for ii, this_sos in enumerate(self.sos):
-            tmp = torch.clone(x)
-            for jj in range(this_sos.shape[0]):
-                tmp = torchaudio.functional.biquad(tmp,
-                                                   b0=this_sos[jj, 0], b1=this_sos[jj, 1], b2=this_sos[jj, 2],
-                                                   a0=this_sos[jj, 3], a1=this_sos[jj, 4], a2=this_sos[jj, 5])
-            out.append(torch.clone(tmp))
-        out = torch.stack(out, dim=-2)  # Stack over frequency bands
-
-        return out
+        self.sos = self._get_octave_filters(center_freqs, self.fs, self.order)
 
     def _forward_scipy(self, x):
         out = []
-        for ii, this_sos in enumerate(self.sos):
+        for this_sos in self.sos:
             tmp = torch.clone(x).cpu().numpy()
-            tmp = scipy.signal.sosfilt(this_sos, tmp, axis=-1)
-            out.append(torch.from_numpy(tmp))
+            tmp = scipy.signal.sosfiltfilt(this_sos, tmp, axis=-1)
+            out.append(torch.from_numpy(tmp.copy()))
         out = torch.stack(out, dim=-2)  # Stack over frequency bands
 
         return out
+
+    def set_center_freqs(self, center_freqs):
+        self._center_freqs = center_freqs
+        self.sos = self._get_octave_filters(center_freqs, self.fs, self.order)
 
     def forward(self, x):
         if self.backend == 'scipy':
             out = self._forward_scipy(x)
         else:
-            out = self._forward_torch(x)
+            raise NotImplementedError('No good implementation relying solely on the pytorch backend has been found yet')
         return out
 
     def get_filterbank_impulse_response(self):
@@ -298,25 +285,27 @@ class FilterByOctaves(nn.Module):
         return response
 
     @staticmethod
-    def _get_octave_filter(center_freq: float, fs: int, order: int = 3) -> torch.Tensor:
+    def _get_octave_filters(center_freqs: List, fs: int, order: int = 5) -> List[torch.Tensor]:
         """
-        Design octave band filters with butterworth.
-        Returns a sos matrix (tensor) of the shape [filters, 6], in standard sos format.
-
-        Based on octdsgn(Fc,Fs,N); in MATLAB.
-        References:
-            [1] ANSI S1.1-1986 (ASA 65-1986): Specifications for
-                Octave-Band and Fractional-Octave-Band Analog and
-                Digital Filters, 1993.
+        Design octave band filters (butterworth filter).
+        Returns a tensor with the SOS (second order sections) representation of the filter
         """
-        beta = np.pi / 2 / order / np.sin(np.pi / 2 / order)
-        alpha = (1 + np.sqrt(1 + 8 * beta ** 2)) / 4 / beta
-        W1 = center_freq / (fs / 2) * np.sqrt(1 / 2) / alpha
-        W2 = center_freq / (fs / 2) * np.sqrt(2) * alpha
-        Wn = np.array([W1, W2])
+        sos = []
+        for band_idx in range(len(center_freqs)):
+            center_freq = center_freqs[band_idx]
+            if abs(center_freq) < 1e-6:
+                # Lowpass band below lowest octave band
+                f_cutoff = (1 / np.sqrt(2)) * center_freqs[band_idx+1]
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff / (fs/2), btype='lowpass', analog=False, output='sos')
+            elif abs(center_freq-fs/2) < 1e-6:
+                f_cutoff = np.sqrt(2) * center_freqs[band_idx-1]
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff / (fs/2), btype='highpass', analog=False, output='sos')
+            else:
+                f_cutoff = center_freq * np.array([1 / np.sqrt(2), np.sqrt(2)]) / (fs/2)
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, btype='bandpass', analog=False, output='sos')
+            sos.append(torch.from_numpy(this_sos))
 
-        sos = scipy.signal.butter(N=order, Wn=Wn, btype='bandpass', analog=False, output='sos')
-        return torch.from_numpy(sos)
+        return sos
 
 
 def _tupleset(t: Iterable[T], i: int, value: T) -> Tuple[T, ...]:
@@ -412,13 +401,17 @@ class PreprocessRIR(nn.Module):
                  filter_frequencies: List[int] = [125, 250, 500, 1000, 2000, 4000], output_size: int = 100):
         super(PreprocessRIR, self).__init__()
         self.input_transform = input_transform
-        self.filter_frequencies = filter_frequencies
+        self._filter_frequencies = filter_frequencies
         self.output_size = output_size
         self.sample_rate = sample_rate
         self.eps = 1e-10
 
-        self.filterbank = FilterByOctaves(center_freqs=filter_frequencies, order=3, fs=self.sample_rate,
+        self.filterbank = FilterByOctaves(center_freqs=self._filter_frequencies, order=3, fs=self.sample_rate,
                                           backend='scipy')
+
+    def set_filter_frequencies(self, filter_frequencies):
+        self._filter_frequencies = filter_frequencies
+        self.filterbank.set_center_freqs(filter_frequencies)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         out, norm_vals = self.schroeder(x)
