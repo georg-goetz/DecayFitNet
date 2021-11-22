@@ -1,8 +1,8 @@
 # Pre processing:
 # 	Load impulse  or path to impulse
 # 	Filter bank
-# 	Backwards integration (cut arway at -140 db)
-# 	Downsampling to 2400 samples  (pad with last value)
+# 	Backwards integration (truncate at -140 db)
+# 	Resampling to 100 samples
 # 	Ampltiude2DB
 # 	Normalization (wtih training data parameters)
 #
@@ -24,32 +24,30 @@ import onnx
 import onnxruntime
 import os
 from pathlib import Path
-from typing import Union, List
+from typing import Union, List, Tuple
 
 from .core import PreprocessRIR, generate_synthetic_edc, postprocess_parameters, adjust_timescale
 
 
 class DecayFitNetToolbox:
-    output_size = 2400  # Timesteps of downsampled RIRs
+    output_size = 100  # Timesteps of downsampled RIRs
     filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-    __version = '0.0.3'
+    __version = '0.1.0'
 
-    def __init__(self, sample_rate: int = 48000,  normalization: bool = True, backend: str = 'pytorch',
+    def __init__(self, sample_rate: int = 48000, backend: str = 'pytorch',
                  device: torch.device = torch.device('cpu')):
         self.backend = backend
         self.fs = sample_rate
-        self.normalization = normalization
         self.device = device
 
         PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
 
-        self._onnx_model = onnx.load(os.path.join(PATH_ONNX, "DecayFitNet.onnx"))
+        self._onnx_model = onnx.load(os.path.join(PATH_ONNX, "DecayFitNet_v10.onnx"))
         onnx.checker.check_model(self._onnx_model)
-        self._session = onnxruntime.InferenceSession(os.path.join(PATH_ONNX, "DecayFitNet.onnx"))
+        self._session = onnxruntime.InferenceSession(os.path.join(PATH_ONNX, "DecayFitNet_v10.onnx"))
         self.input_transform = pickle.load(open(os.path.join(PATH_ONNX, 'input_transform.pkl'), 'rb'))
 
         self._preprocess = PreprocessRIR(input_transform=self.input_transform,
-                                         normalization=normalization,
                                          sample_rate=self.fs,
                                          filter_frequencies=self.filter_frequencies,
                                          output_size=self.output_size)
@@ -58,7 +56,6 @@ class DecayFitNetToolbox:
         frmt = f'DecayFitNetToolbox {self.__version}  \n'
         frmt += f'Input fs = {self.fs} \n'
         frmt += f'Output_size = {self.output_size} \n'
-        frmt += f'Normalization = {self.normalization} \n'
         frmt += f'Filter freqs = {self.filter_frequencies} \n'
         #frmt += f'Using model: {self._onnx_model}'
 
@@ -68,27 +65,27 @@ class DecayFitNetToolbox:
     def _to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
-    def preprocess(self, signal: torch.Tensor) -> torch.Tensor:
+    def preprocess(self, signal: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Preprocess an input signal to extract EDCs"""
-        edcs = self._preprocess(signal)
-        return edcs
+        edcs, norm_vals = self._preprocess(signal)
+        return edcs, norm_vals
 
-    def estimate_parameters(self, signal: torch.Tensor, do_preprocess: bool = True, do_scale_adjustment: bool = True) \
-            -> List[torch.Tensor]:
-        """ Estimates the parameters for the impulse.
-        TODO input parameter description
+    def estimate_parameters(self, signal: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
+        """ Estimates the parameters for this impulse response. The resulting fitted EDC is normalized to 0dB and can be
+        re-normalized to the original level with norm_vals
+
+        Args:
+            signal: [rir_length, 1], rir to be analyzed
 
         The estimation returns:
-            -- t_vals : [batch, 3] : time_values for the 3 slopes
-            -- a_vals : [batch, 3] : amplitude_values for the 3 slopes
-            -- noise_vals :  [batch, 1] : noise floor
-            -- n_slopes : [batch, 3] : probabilities for each slope
+            -- t_prediction : [batch, 3] : time_values for the 3 slopes
+            -- a_prediction : [batch, 3] : amplitude_values for the 3 slopes
+            -- n_prediction :  [batch, 1] : noise floor
+            -- norm_vals : [batch, n_bands] : EDCs are normalized to 0dB, as customary for most decay analysis problems,
+                                              but if the initial level is required, norm_vals will return it
 
         """
-        if do_preprocess:
-            edcs = self._preprocess(signal)
-        else:
-            edcs = signal
+        edcs, norm_vals = self._preprocess(signal)
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
@@ -97,10 +94,9 @@ class DecayFitNetToolbox:
         t_prediction, a_prediction, n_prediction, __ = postprocess_parameters(ort_outs[0], ort_outs[1], ort_outs[2],
                                                                               ort_outs[3], self.device)
 
-        if do_scale_adjustment:
-            t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, signal.shape[1], self.fs)
+        t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, signal.shape[1], self.fs)
 
-        return [t_prediction, a_prediction, n_prediction]
+        return [t_prediction, a_prediction, n_prediction], norm_vals
 
     def generate_EDCs(self,
                       estimated_T: Union[torch.Tensor, List[float]],
@@ -111,7 +107,7 @@ class DecayFitNetToolbox:
 
         estimated_T, estimated_A, n_exp_prediction should be [batch, dim]
         Example:
-                >> fs = 240
+                >> fs = 10
                 >> l_edc = 10
                 >> t = np.linspace(0, l_edc * fs - 1, l_edc * fs) / fs
                 >> edc = estimate_EDC([1.3, 0.7], [0.7, 0.2], 1e-7, 0.1, t, "cpu")  # TODO
@@ -123,7 +119,7 @@ class DecayFitNetToolbox:
         estimated_T[estimated_T == 0] = 1
 
         if time_axis is None:
-            fs = 240
+            fs = 10
             l_edc = 10
             time_axis = (torch.linspace(0, l_edc * fs - 1, round((1/0.95)*l_edc * fs)) / fs).to(self.device)
 

@@ -408,7 +408,6 @@ class PreprocessRIR(nn.Module):
 
     def __init__(self,
                  input_transform: Dict,
-                 normalization: bool = True,
                  sample_rate: int = 48000,
                  filter_frequencies: List[int] = [125, 250, 500, 1000, 2000, 4000], output_size: int = 100):
         super(PreprocessRIR, self).__init__()
@@ -416,14 +415,13 @@ class PreprocessRIR(nn.Module):
         self.filter_frequencies = filter_frequencies
         self.output_size = output_size
         self.sample_rate = sample_rate
-        self.normalization = normalization
         self.eps = 1e-10
 
         self.filterbank = FilterByOctaves(center_freqs=filter_frequencies, order=3, fs=self.sample_rate,
                                           backend='scipy')
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.schroeder(x)
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        out, norm_vals = self.schroeder(x)
         out = discard_last5(out)
 
         # Discard all beyond -140
@@ -438,16 +436,16 @@ class PreprocessRIR(nn.Module):
         # Clamp to -140 dB
         out = torch.clamp_min(out, -140)
 
-        if self.normalization:
-            out = 2 * out / self.input_transform["edcs_db_normfactor"]
-            out = out + 1
+        # Normalize with input transform
+        out = 2 * out / self.input_transform["edcs_db_normfactor"]
+        out = out + 1
 
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
         out = out.view(-1, out.shape[-1]).type(torch.float32)
 
-        return out
+        return out, norm_vals
 
-    def schroeder(self, rir: torch.Tensor) -> torch.Tensor:
+    def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # Filter
         out = self.filterbank(rir)
 
@@ -458,10 +456,10 @@ class PreprocessRIR(nn.Module):
         out = out[..., reverse_index]
 
         # Normalize to 1
-        out = out / torch.max(out, dim=-1, keepdim=True).values  # per channel
-        # out = out / torch.max(torch.max(out, dim=-1, keepdim=True).values, dim=-2, keepdim=True).values
+        norm_factors = torch.max(out, dim=-1, keepdim=True).values  # per channel
+        out = out / norm_factors
 
-        return out
+        return out, norm_factors.squeeze(2)
 
 
 def generate_synthetic_edc(T, A, noiseLevel, t, device) -> torch.Tensor:
