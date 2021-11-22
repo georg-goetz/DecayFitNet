@@ -1,7 +1,7 @@
 # Pre processing:
 # 	Load impulse  or path to impulse
 # 	Filter bank
-# 	Backwards integration (truncate at -140 db)
+# 	Backwards integration
 # 	Resampling to 100 samples
 # 	Ampltiude2DB
 # 	Normalization (wtih training data parameters)

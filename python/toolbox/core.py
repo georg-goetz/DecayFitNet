@@ -380,19 +380,6 @@ def discard_last5(edc: torch.Tensor) -> torch.Tensor:
     return out
 
 
-def discard_below(edc: torch.Tensor, threshold_val: float) -> torch.Tensor:
-    # set all values below minimum to 0
-    out = edc.detach().clone()
-    out[out < threshold_val] = 0
-
-    # count zeros from back to find last sample above threshold
-    last_above_thres = out.shape[2] - torch.max((out.flip(2) == 0).sum(dim=2))
-
-    # discard from that sample onwards
-    out = out[:, :, :last_above_thres]
-    return out
-
-
 class PreprocessRIR(nn.Module):
     """ Preprocess a RIR to extract the EDC and prepare it for the neural network model.
         The preprocessing includes: (Upated 24.06.2021):
@@ -428,9 +415,6 @@ class PreprocessRIR(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         out, norm_vals = self.schroeder(x)
-
-        # Discard all below -140 dB
-        out = discard_below(out, 1e-14)
 
         # Discard last 5%
         out = discard_last5(out)
