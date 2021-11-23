@@ -37,6 +37,7 @@ disp(aVals_decayfitnet)
 disp('==== DecayFitNet: Estimated N values (linear scale): ====') 
 disp(nVals_decayFitNet)
 
+% Estimate true EDC
 trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); 
 timeAxis = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs,1) );
 estimatedEDCs_decayfitnet = net.generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis).';

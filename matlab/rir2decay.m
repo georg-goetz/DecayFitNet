@@ -40,7 +40,11 @@ end
 
 numBands = numel(fBands);
 
-% Apply octave band filters to RIR, order=3
+% Remove trailing zeros
+nTrailingZeros = find(flipud(rir), 1);
+rir = rir(1:end-nTrailingZeros+1);
+
+% Apply octave band filters to RIR, order=5
 rirFBands = octaveFiltering(rir, fs, fBands);
 
 % detect peak in rir, because the decay will be calculated from that point

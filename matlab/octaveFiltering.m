@@ -18,8 +18,8 @@ for bIdx = 1:numBands
     end
     
     % Zero phase filtering
-    [sos, g] = zp2sos(z, p, k);
-    outBands(:, bIdx) = filtfilt(sos, g, inputSignal);
+    sos = zp2sos(z, p, k);
+    outBands(:, bIdx) = filtfilt(sos, 1, inputSignal);
 end
 
 end

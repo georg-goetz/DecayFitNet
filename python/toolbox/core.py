@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
-import torchaudio
 import scipy
 import scipy.stats
 import scipy.signal
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Iterable, Tuple, TypeVar, Callable, Any, List, Dict
+from typing import Tuple, TypeVar, Callable, Any, List, Dict
 import h5py
 
 T = TypeVar('T', bound=Callable[..., Any])
@@ -247,8 +246,11 @@ class FilterByOctaves(nn.Module):
     This is useful to get the decay curves of RIRs.
     """
 
-    def __init__(self, center_freqs=[125, 250, 500, 1000, 2000, 4000], order=5, fs=48000, backend='scipy'):
+    def __init__(self, center_freqs=None, order=5, fs=48000, backend='scipy'):
         super(FilterByOctaves, self).__init__()
+
+        if center_freqs is None:
+            center_freqs = [125, 250, 500, 1000, 2000, 4000]
 
         self._center_freqs = center_freqs
         self.order = order
@@ -296,64 +298,17 @@ class FilterByOctaves(nn.Module):
             if abs(center_freq) < 1e-6:
                 # Lowpass band below lowest octave band
                 f_cutoff = (1 / np.sqrt(2)) * center_freqs[band_idx+1]
-                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff / (fs/2), btype='lowpass', analog=False, output='sos')
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='lowpass', analog=False, output='sos')
             elif abs(center_freq-fs/2) < 1e-6:
                 f_cutoff = np.sqrt(2) * center_freqs[band_idx-1]
-                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff / (fs/2), btype='highpass', analog=False, output='sos')
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='highpass', analog=False, output='sos')
             else:
-                f_cutoff = center_freq * np.array([1 / np.sqrt(2), np.sqrt(2)]) / (fs/2)
-                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, btype='bandpass', analog=False, output='sos')
+                f_cutoff = center_freq * np.array([1 / np.sqrt(2), np.sqrt(2)])
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='bandpass', analog=False, output='sos')
+
             sos.append(torch.from_numpy(this_sos))
 
         return sos
-
-
-def _tupleset(t: Iterable[T], i: int, value: T) -> Tuple[T, ...]:
-    lst = list(t)
-    lst[i] = value
-    return tuple(lst)
-
-
-def _cumtrapz(y: torch.Tensor,
-              x: np.ndarray = None,
-              device: str = 'cpu',
-              axis: int = -1, ) -> torch.Tensor:
-    """
-    Cumulative trapezoid integral in PyTorch.
-    Heavily based on the scipy implementation here:
-    https://github.com/pytorch/pytorch/issues/52552
-    """
-    if x is None:
-        d = np.asarray([1.0])
-    else:
-        if x.ndim == 1:
-            d = np.diff(x)
-            # reshape to correct shape
-            shape = [1] * y.ndim
-            shape[axis] = -1
-            d = d.reshape(shape)
-        elif len(x.shape) != len(y.shape):
-            raise ValueError("If given, shape of x must be 1-D or the "
-                             "same as y.")
-        else:
-            d = np.diff(x, axis=axis)
-
-        if d.shape[axis] != y.shape[axis] - 1:
-            raise ValueError("If given, length of x along axis must be the "
-                             "same as y.")
-
-    d = torch.from_numpy(d).to(device)
-
-    nd = len(y.shape)
-    slice1 = _tupleset((slice(None),) * nd, axis, slice(1, None))
-    slice2 = _tupleset((slice(None),) * nd, axis, slice(None, -1))
-    res = torch.cumsum(d * (y[slice1] + y[slice2]) / 2.0, dim=axis).to(device)
-
-    shape = list(res.shape)
-    shape[axis] = 1
-    res = torch.cat([torch.zeros(shape, dtype=res.dtype).to(device), res], dim=axis)
-
-    return res
 
 
 class Normalizer(torch.nn.Module):
@@ -372,11 +327,31 @@ class Normalizer(torch.nn.Module):
         return out
 
 
-def discard_last5(edc: torch.Tensor) -> torch.Tensor:
-    # Discard last 5%
-    last_id = int(np.round(0.95 * edc.shape[-1]))
+def discard_lastNPercent(edc: torch.Tensor, nPercent: float) -> torch.Tensor:
+    # Discard last n%
+    last_id = int(np.round((1-nPercent/100) * edc.shape[-1]))
     out = edc[..., 0:last_id]
 
+    return out
+
+
+def discard_below(edc: torch.Tensor, threshold_val: float) -> torch.Tensor:
+    # set all values below minimum to 0
+    out = edc.detach().clone()
+    out[out < threshold_val] = 0
+
+    out = discard_trailing_zeros(out)
+    return out
+
+
+def discard_trailing_zeros(edc: torch.Tensor) -> torch.Tensor:
+    out = edc.detach().clone()
+
+    # count zeros from back to find last sample above threshold
+    last_above_thres = out.shape[-1] - torch.max((out.flip(-1) == 0).sum(dim=-1))
+
+    # discard from that sample onwards
+    out = out[..., :last_above_thres]
     return out
 
 
@@ -395,18 +370,21 @@ class PreprocessRIR(nn.Module):
         # EDC_db -> normalization -> EDC_final that is the input to the network
     """
 
-    def __init__(self,
-                 input_transform: Dict,
-                 sample_rate: int = 48000,
-                 filter_frequencies: List[int] = [125, 250, 500, 1000, 2000, 4000], output_size: int = 100):
+    def __init__(self, input_transform: Dict, sample_rate: int = 48000, filter_frequencies=None,
+                 output_size: int = 100):
+
         super(PreprocessRIR, self).__init__()
+
+        if filter_frequencies is None:
+            filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
+
         self.input_transform = input_transform
         self._filter_frequencies = filter_frequencies
         self.output_size = output_size
         self.sample_rate = sample_rate
         self.eps = 1e-10
 
-        self.filterbank = FilterByOctaves(center_freqs=self._filter_frequencies, order=3, fs=self.sample_rate,
+        self.filterbank = FilterByOctaves(center_freqs=self._filter_frequencies, order=5, fs=self.sample_rate,
                                           backend='scipy')
 
     def set_filter_frequencies(self, filter_frequencies):
@@ -416,15 +394,24 @@ class PreprocessRIR(nn.Module):
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         out, norm_vals = self.schroeder(x)
 
-        # Discard last 5%
-        out = discard_last5(out)
+        # Discard all below -140 dB
+        out = discard_below(out, 1e-14)
 
-        # Resample to 100 samples
-        out = torch.nn.functional.interpolate(out, size=self.output_size, scale_factor=None, mode='linear',
-                                              align_corners=False, recompute_scale_factor=None)
+        # Get t-adjust and n-adjust factors:
+        # T value predictions have to be adjusted for the time-scale conversion (downsampling)
+        # N value predictions have to be converted from exponent representation to actual value and adjusted for
+        # the downsampling
+        t_adjust = 10 / (out.shape[2] / self.sample_rate)
+        n_adjust = out.shape[2] / 100
+
+        # Discard last 5%
+        out = discard_lastNPercent(out, 5)
 
         # Convert to dB
         out = 10 * torch.log10(out + self.eps)
+
+        # Resample to 100 samples
+        out = torch.nn.functional.interpolate(out, size=self.output_size, mode='linear', align_corners=True)
 
         # Normalize with input transform
         out = 2 * out / self.input_transform["edcs_db_normfactor"]
@@ -433,17 +420,18 @@ class PreprocessRIR(nn.Module):
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
         out = out.view(-1, out.shape[-1]).type(torch.float32)
 
-        return out, norm_vals
+        return out, norm_vals, t_adjust, n_adjust
 
     def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        out = discard_trailing_zeros(rir)
+
         # Filter
-        out = self.filterbank(rir)
+        out = self.filterbank(out)
 
         # Backwards integral
-        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
-        out = _cumtrapz(out[..., reverse_index] ** 2, device=out.device)
-        reverse_index = torch.arange(out.shape[-1] - 1, -1, -1)
-        out = out[..., reverse_index]
+        out = torch.flip(out, [2])
+        out = (1 / out.shape[2]) * torch.cumsum(out**2, 2)
+        out = torch.flip(out, [2])
 
         # Normalize to 1
         norm_factors = torch.max(out, dim=-1, keepdim=True).values  # per channel
@@ -511,14 +499,12 @@ def postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_pr
     return t_prediction, a_prediction, n_prediction, n_slopes_prediction
 
 
-def adjust_timescale(t_prediction, n_prediction, L_EDC, fs):
+def adjust_timescale(t_prediction, n_prediction, t_adjust, n_adjust):
     # T value predictions have to be adjusted for the time-scale conversion (downsampling)
-    t_adjust = 10 / (L_EDC / fs)
     t_prediction = t_prediction / t_adjust
 
     # N value predictions have to be converted from exponent representation to actual value and adjusted for
     # the downsampling
-    n_adjust = L_EDC / 100
     n_prediction = n_prediction / n_adjust
 
     return t_prediction, n_prediction

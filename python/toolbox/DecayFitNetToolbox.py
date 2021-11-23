@@ -33,8 +33,12 @@ class DecayFitNetToolbox:
     output_size = 100  # Timesteps of downsampled RIRs
     __version = '0.1.0'
 
-    def __init__(self, sample_rate: int = 48000, filter_frequencies=[125, 250, 500, 1000, 2000, 4000],
+    def __init__(self, sample_rate: int = 48000, filter_frequencies=None,
                  backend: str = 'pytorch', device: torch.device = torch.device('cpu')):
+
+        if filter_frequencies is None:
+            filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
+
         self.backend = backend
         self.fs = sample_rate
         self.device = device
@@ -57,7 +61,6 @@ class DecayFitNetToolbox:
         frmt += f'Input fs = {self.fs} \n'
         frmt += f'Output_size = {self.output_size} \n'
         frmt += f'Filter freqs = {self._filter_frequencies} \n'
-        #frmt += f'Using model: {self._onnx_model}'
 
         return frmt
 
@@ -82,14 +85,16 @@ class DecayFitNetToolbox:
             signal: [rir_length, 1], rir to be analyzed
 
         The estimation returns:
+            Tuple of:
             -- t_prediction : [batch, 3] : time_values for the 3 slopes
             -- a_prediction : [batch, 3] : amplitude_values for the 3 slopes
             -- n_prediction :  [batch, 1] : noise floor
+            List:
             -- norm_vals : [batch, n_bands] : EDCs are normalized to 0dB, as customary for most decay analysis problems,
                                               but if the initial level is required, norm_vals will return it
 
         """
-        edcs, norm_vals = self._preprocess(signal)
+        edcs, norm_vals, t_adjust, n_adjust = self._preprocess(signal)
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
@@ -98,7 +103,7 @@ class DecayFitNetToolbox:
         t_prediction, a_prediction, n_prediction, __ = postprocess_parameters(ort_outs[0], ort_outs[1], ort_outs[2],
                                                                               ort_outs[3], self.device)
 
-        t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, signal.shape[1], self.fs)
+        t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, t_adjust, n_adjust)
 
         return [t_prediction, a_prediction, n_prediction], norm_vals
 
