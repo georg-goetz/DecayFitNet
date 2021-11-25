@@ -5,16 +5,18 @@ assert(length(edc_db) == length(t), 'Time axis does not match EDC.');
 allMaxLikelihoodParams = cell(length(modelOrders), 1);
 allBICs = zeros(length(modelOrders), 1);
 
-for thisModelOrder = modelOrders(1:end)
+for thisModelOrderIdx = 1:length(modelOrders)
+    thisModelOrder = modelOrders(thisModelOrderIdx);
     [testedParameters_model, likelihoods_model] = bayesianDecayAnalysis_sliceSampling(edc_db, thisModelOrder, tCandidates, aCandidates, nCandidates, nIterations, t);
     [maxLikelihood_model, maxLikelihoodIdx_model] = max(likelihoods_model, [], 'all', 'linear');
-    allMaxLikelihoodParams{thisModelOrder} = testedParameters_model(maxLikelihoodIdx_model, :);
-    allBICs(thisModelOrder) = 2*log(maxLikelihood_model) - (2*thisModelOrder + 1)*log(length(t)); % Eq. (15)
+    allMaxLikelihoodParams{thisModelOrderIdx} = testedParameters_model(maxLikelihoodIdx_model, :);
+    allBICs(thisModelOrderIdx) = 2*log(maxLikelihood_model) - (2*thisModelOrder + 1)*log(length(t)); % Eq. (15)
 end
 
 % Evaluate BIC
-[~, bestModelOrder] = max(allBICs);
-bestModelParams = allMaxLikelihoodParams{bestModelOrder};
+[~, bestModelOrderIdx] = max(allBICs);
+bestModelOrder = modelOrders(bestModelOrderIdx);
+bestModelParams = allMaxLikelihoodParams{bestModelOrderIdx};
 
 tVals = tCandidates(bestModelParams(1:bestModelOrder)).';
 aVals = aCandidates(bestModelParams(bestModelOrder+1:2*bestModelOrder)).';
