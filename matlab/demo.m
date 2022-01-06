@@ -7,6 +7,14 @@ audioPath = '../model';  %local path
 rirFName = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
 
 fadeoutLength = 0;  % in secs
+nSlopes = 0; % 0 = estimate number of active slopes
+
+% Bayesian parameters
+parameterRanges.tRange = [0.1, 3.5];
+parameterRanges.aRange = [-3, 0]; % 10^aRange
+parameterRanges.nRange = [-10, -2]; % 10^nRange
+nIterations = 50;
+
 %% Load an impulse
 
 [rir, fs] = audioread(fullfile(audioPath, rirFName));
@@ -28,7 +36,7 @@ fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', 
 %sound(rir, fs)
 
 %% Load model and estimate parameters
-net = DecayFitNetToolbox();
+net = DecayFitNetToolbox(nSlopes, fs);
 [tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet] = net.estimateParameters(rir);
 disp('==== DecayFitNet: Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(tVals_decayfitnet)
@@ -38,7 +46,7 @@ disp('==== DecayFitNet: Estimated N values (linear scale): ====')
 disp(nVals_decayFitNet)
 
 % Estimate true EDC
-trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); 
+trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); % doBackwardsInt=true, analyseFullRIR=true, normalize=true
 timeAxis = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs,1) );
 estimatedEDCs_decayfitnet = net.generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis).';
 
@@ -69,39 +77,8 @@ fprintf('==== Average MSE between input EDCs and estimated fits: %.02f ====\n', 
 fprintf('MSE between input EDC and estimated fit for different frequency bands:\n 125 Hz: %.02f, 250 Hz: %.02f, 500 Hz: %.02f, 1 kHz: %.02f, 2 kHz: %.02f, 4 kHz: %.02f\n', allMSE(:));
 
 %% Use Bayesian decay analysis with slice sampling
-% Parameters
-tRange = [0.1, 3.5];
-aRange = [-3, 0]; % 10^aRange
-nRange = [-10, -2]; % 10^nRange
-nPointsPerDim = 100; % used to define slice window: incremend in steps of 1
-nIterations = 50;
-modelOrders = [1, 2, 3];
-
-% Set up parameter space
-tCandidates = linspace(tRange(1), tRange(2), nPointsPerDim);
-aCandidates = logspace(aRange(1), aRange(2), nPointsPerDim);
-nCandidates = logspace(nRange(1), nRange(2), nPointsPerDim);
-
-% Convert to dB
-trueEDCs_db = pow2db(trueEDCs);
-
-% Resample to 100 samples, because Bayesian analysis only works on few
-% datapoints
-trueEDCs_db = resample(trueEDCs_db, 100, length(trueEDCs_db), 0, 5);
-timeAxis_ds = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs_db, 1) ).';
-
-tVals_bayesian = zeros(3, size(trueEDCs_db, 2));
-aVals_bayesian = zeros(3, size(trueEDCs_db, 2));
-nVals_bayesian = zeros(1, size(trueEDCs_db, 2));
-
-% Do Bayesian decay analysis with slice sampling
-for bandIdx=1:size(trueEDCs, 2)
-    [theseTVals, theseAVals, theseNVals] = bayesianDecayAnalysis_estimateParameters(trueEDCs_db(:, bandIdx), modelOrders, tCandidates, aCandidates, nCandidates, nIterations, timeAxis_ds);
-    predictedModelOrder = length(theseTVals);
-    tVals_bayesian(1:predictedModelOrder, bandIdx) = theseTVals;
-    aVals_bayesian(1:predictedModelOrder, bandIdx) = theseAVals;
-    nVals_bayesian(1, bandIdx) = theseNVals / length(trueEDCs) * length(timeAxis_ds); % rescale noise value to original sampling rate
-end
+bda = BayesianDecayAnalysis(nSlopes, fs, parameterRanges, nIterations);
+[tVals_bayesian, aVals_bayesian, nVals_bayesian] = bda.estimateParameters(rir);
 
 disp('==== Bayesian analysis: Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(tVals_bayesian)

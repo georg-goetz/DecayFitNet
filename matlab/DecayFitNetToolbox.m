@@ -10,7 +10,7 @@ classdef DecayFitNetToolbox < handle
     end
     properties (SetAccess = private)
         version = '0.1.0'
-        output_size = 100  % Timesteps of resampled RIRs
+        outputSize = 100  % Timesteps of resampled RIRs
         nSlopes
         onnxPath
         onnxModel
@@ -21,7 +21,7 @@ classdef DecayFitNetToolbox < handle
     methods
         function obj = DecayFitNetToolbox(nSlopes, sampleRate)
             if nargin < 1
-                nSlopes = 0;
+                nSlopes = 0; % estimate number of slopes from data
             end
             if nargin < 2
                 sampleRate = 48000;
@@ -81,7 +81,7 @@ classdef DecayFitNetToolbox < handle
             nBands = length(obj.filterFrequencies);
             
             nRirs = 1;
-            edcs = zeros(obj.output_size, nRirs, nBands);
+            edcs = zeros(obj.outputSize, nRirs, nBands);
             tAdjustFactors = zeros(1, nRirs, nBands);
             nAdjustFactors = zeros(1, nRirs, nBands);
             
@@ -94,27 +94,27 @@ classdef DecayFitNetToolbox < handle
                 thisDecay = schroederDecays(:, bandIdx);
                                 
                 % Convert to dB
-                thisDecay = pow2db(thisDecay);
+                thisDecay = pow2db(thisDecay+eps);
                 
-                % Discard below -140dB
-                thisLength = find(thisDecay < -140, 1);
+                % Discard below eps
+                thisLength = find(thisDecay <= pow2db(eps), 1);
                 if ~isempty(thisLength)
                     thisDecay = thisDecay(1:thisLength);
                 end
                 
                 % Calculate adjustment factors for t and n predictions
                 tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sampleRate);
-                nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / 100;
+                nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / obj.outputSize;
                 
                 % Discard last 5%
                 thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
 
-                % Resample to obj.output_size (default = 100) samples
-                thisDecay_ds = resample(thisDecay, obj.output_size, length(thisDecay), 0, 5);
-                edcs(1:obj.output_size, rirIdx, bandIdx) = thisDecay_ds(1:obj.output_size);
+                % Resample to obj.outputSize (default = 100) samples
+                thisDecay_ds = resample(thisDecay, obj.outputSize, length(thisDecay), 0, 5);
+                edcs(1:obj.outputSize, rirIdx, bandIdx) = thisDecay_ds(1:obj.outputSize);
 
-                tmp = 2 * edcs(1:obj.output_size, rirIdx, bandIdx) ./ obj.inputTransform{'edcs_db_normfactor'};
-                edcs(1:obj.output_size, rirIdx, bandIdx) = tmp + 1;
+                tmp = 2 * edcs(1:obj.outputSize, rirIdx, bandIdx) ./ obj.inputTransform{'edcs_db_normfactor'};
+                edcs(1:obj.outputSize, rirIdx, bandIdx) = tmp + 1;
             end
             
             edcs = squeeze(edcs);

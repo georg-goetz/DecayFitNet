@@ -1,0 +1,349 @@
+classdef BayesianDecayAnalysis < handle
+    
+    properties
+        sampleRate
+        
+        % filter frequency = 0 will give a lowpass band below the lowest
+        % octave band, filter frequency = sample rate / 2 will give the
+        % highpass band above the highest octave band
+        filterFrequencies = [125, 250, 500, 1000, 2000, 4000]
+        
+        nPointsPerDim = 100; % defines parameter space and slice window (increment in steps of 1)
+        nIterations = 50;
+    end
+    properties (SetAccess = private)
+        version = '0.1.0'
+        outputSize = 100  % Timesteps of resampled RIRs
+        nSlopes
+        
+        tRange;
+        aRange; % 10^aRange
+        nRange; % 10^nRange
+        tSpace;
+        aSpace;
+        nSpace;
+    end
+    properties (Dependent)
+        nBands
+        maxNSlopes
+    end
+    
+    methods
+        function obj = BayesianDecayAnalysis(nSlopes, sampleRate, parameterRanges, nIterations)
+            if nargin < 1
+                nSlopes = 0; % estimate number of slopes from data
+            end
+            if nargin < 2
+                sampleRate = 48000;
+            end
+            if nargin < 3
+                parameterRanges.tRange = [0.1, 3.5];
+                parameterRanges.aRange = [-3, 0]; % 10^aRange
+                parameterRanges.nRange = [-10, -2]; % 10^nRange
+            end
+            if nargin < 4
+                nIterations = 50;
+            end
+                            
+            obj.sampleRate = sampleRate;
+            obj.nSlopes = nSlopes;
+            
+            obj.setParameterRanges(parameterRanges);
+            obj.initParameterSpace();
+            
+            obj.nIterations = nIterations;
+        end
+        
+        function set.filterFrequencies(obj, filterFrequencies)
+            assert(~any(filterFrequencies < 0) && ~any(filterFrequencies > obj.sampleRate/2), 'Invalid band frequency. Octave band frequencies must be bigger than 0 and smaller than fs/2. Set frequency=0 for a lowpass band and frequency=fs/2 for a highpass band.');
+            filterFrequencies = sort(filterFrequencies);
+            obj.filterFrequencies = filterFrequencies;
+        end
+        
+        function set.nSlopes(obj, nSlopes)
+            assert(nSlopes <= 3, 'Maximum number of supported slopes: 3');
+            obj.nSlopes = nSlopes;
+        end
+        
+        function nBands = get.nBands(obj)
+            nBands = length(obj.filterFrequencies);
+        end
+        
+        function maxNSlopes = get.maxNSlopes(obj)
+            if obj.nSlopes == 0
+                maxNSlopes = 3;
+            else
+                maxNSlopes = obj.nSlopes;
+            end
+        end
+        
+        function set.nPointsPerDim(obj, nPointsPerDim)
+            obj.nPointsPerDim = nPointsPerDim;
+            obj.initParameterSpace();
+        end
+        
+        function setParameterRanges(obj, parameterRanges)
+            assert(isfield(parameterRanges, 'tRange') ...
+                && isfield(parameterRanges, 'aRange') ...
+                && isfield(parameterRanges, 'nRange'), ...
+                'parameterRanges must be a struct that has the fields tRange, aRange, and nRange');
+            tRange_tmp = parameterRanges.tRange;
+            aRange_tmp = parameterRanges.aRange;
+            nRange_tmp = parameterRanges.nRange;
+
+            assert(length(tRange_tmp)==2 && length(aRange_tmp)==2 && length(nRange_tmp)==2, ...
+                'tRange, aRange, and nRange must be given as an array [minVal, maxVal]');
+            assert(diff(tRange_tmp) > 0 && diff(aRange_tmp) > 0 && diff(nRange_tmp) > 0, ...
+                'First value in tRange, aRange, and nRange must be smaller than second value, i.e., array should be [minVal, maxVal]');
+            
+            obj.tRange = tRange_tmp;
+            obj.aRange = aRange_tmp;
+            obj.nRange = nRange_tmp;
+        end
+        
+        function initParameterSpace(obj)
+            obj.tSpace = linspace(obj.tRange(1), obj.tRange(2), obj.nPointsPerDim);
+            obj.aSpace = logspace(obj.aRange(1), obj.aRange(2), obj.nPointsPerDim);
+            obj.nSpace = logspace(obj.nRange(1), obj.nRange(2), obj.nPointsPerDim);
+        end
+        
+        function [tVals, aVals, nVals] = estimateParameters(obj, rir)
+            [edcs, scaleAdjustFactors] = obj.preprocess(rir);
+            timeAxis_ds = linspace(0, (length(rir) - 1) / obj.sampleRate, size(edcs, 1) ).';
+            
+            % in nSlope estimation mode: max number of slopes is hard-coded
+            % in get method (3 is usually enough)
+            tVals = zeros(obj.maxNSlopes, obj.nBands);
+            aVals = zeros(obj.maxNSlopes, obj.nBands);
+            nVals = zeros(1, obj.nBands);
+            
+            % go over all frequency bands
+            for bandIdx=1:obj.nBands
+                [tPrediction, aPrediction, nPrediction] = obj.estimation(edcs(:, bandIdx), timeAxis_ds);
+                nSlopesPrediction = size(tPrediction, 1);
+                tVals(1:nSlopesPrediction, bandIdx) = tPrediction;
+                aVals(1:nSlopesPrediction, bandIdx) = aPrediction;
+                nVals(1, bandIdx) = nPrediction;
+            end
+            
+            % Postprocess parameters: scale adjustment, zero inactive
+            % slopes, and sort
+            [tVals, aVals, nVals] = obj.postprocessParameters(tVals, aVals, nVals, scaleAdjustFactors);
+        end
+        
+        function [edcs, scaleAdjustFactors] = preprocess(obj, signal)
+            edcs = zeros(obj.outputSize, obj.nBands);
+
+            % Extract decays
+            schroederDecays = rir2decay(signal, obj.sampleRate, obj.filterFrequencies, true, true, true);
+            
+            % Calculate adjustment factor n predictions
+            scaleAdjustFactors.nAdjust = size(schroederDecays, 1) / obj.outputSize;
+            scaleAdjustFactors.tAdjust = size(signal, 1) / size(schroederDecays, 1);
+            
+            for bandIdx = 1:obj.nBands
+                % Do backwards integration
+                thisDecay = schroederDecays(:, bandIdx);
+                                
+                % Convert to dB
+                thisDecay = pow2db(thisDecay);
+                                
+                % Resample to obj.outputSize (default = 100) samples
+                thisDecay_ds = resample(thisDecay, obj.outputSize, length(thisDecay), 0, 5);
+                edcs(:, bandIdx) = thisDecay_ds;
+            end
+        end
+        
+        function [tVals, aVals, nVals] = postprocessParameters(obj, tVals, aVals, nVals, scaleAdjustFactors)
+            % Process the estimated t, a, and n parameters
+            
+            % Adjust for downsampling
+            nVals = nVals / scaleAdjustFactors.nAdjust;
+            
+            % Adjust for trailing zero removal
+            tVals = tVals / scaleAdjustFactors.tAdjust;
+            
+            % In nSlope estimation mode: Get a binary mask to only use the 
+            % number of slopes that were predicted, zero others
+            if obj.nSlopes == 0
+                mask = (aVals == 0);
+                tVals(mask) = 0;
+            end
+
+            % Sort T and A values:
+            % 1) only in nSlope estimation mode: assign nans to sort the 
+            % inactive slopes to the end
+            if obj.nSlopes == 0
+                tVals(mask) = NaN;
+                aVals(mask) = NaN;
+            end
+            
+            % 2) sort
+            [tVals, sortIdxs] = sort(tVals, 1);
+            for bandIdx = 1:obj.nBands
+                aThisBand = aVals(:, bandIdx);
+                aVals(:, bandIdx) = aThisBand(sortIdxs(:, bandIdx));
+            end
+            
+            % 3) only in nSlope estimation mode: set nans to zero again
+            if obj.nSlopes == 0
+                tVals(isnan(tVals)) = 0;  
+                aVals(isnan(aVals)) = 0; 
+            end
+        end
+        
+        function [tVals, aVals, nVals] = estimation(obj, edc_db, timeAxis)
+            % Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011).
+            
+            assert(length(edc_db) == length(timeAxis), 'Time axis does not match EDC.');
+            
+            if obj.nSlopes == 0
+                modelOrders = [1, 2, 3]; % estimate number of slopes according to BIC
+            else
+                modelOrders = obj.nSlopes;
+            end
+            
+            allMaxLikelihoodParams = cell(length(modelOrders), 1);
+            allBICs = zeros(length(modelOrders), 1);
+            
+            % go through all possible model orders and find max likelihood
+            for thisModelOrderIdx = 1:length(modelOrders)
+                thisModelOrder = modelOrders(thisModelOrderIdx);
+                
+                % Do slice sampling to determine likelihoods for multiple
+                % parameter combinations
+                [testedParameters, likelihoods] = obj.sliceSampling(edc_db, thisModelOrder, timeAxis);
+                
+                % Find maximum likelihood and corresponding parameter
+                % combination
+                [maxLikelihood, maxLikelihoodIdx] = max(likelihoods, [], 'all', 'linear');
+                allMaxLikelihoodParams{thisModelOrderIdx} = testedParameters(maxLikelihoodIdx, :);
+                
+                % Determine BIC for this maximum likelihood and model
+                % order: this is used to estimate the model order if
+                % desired
+                allBICs(thisModelOrderIdx) = 2*log(maxLikelihood) - (2*thisModelOrder + 1)*log(length(timeAxis)); % Eq. (15)
+            end
+
+            % Find model with highest BIC: model that describes data best
+            % with most concise model
+            [~, bestModelOrderIdx] = max(allBICs);
+            bestModelOrder = modelOrders(bestModelOrderIdx);
+            bestModelParams = allMaxLikelihoodParams{bestModelOrderIdx};
+
+            tVals = obj.tSpace(bestModelParams(1:bestModelOrder)).';
+            aVals = obj.aSpace(bestModelParams(bestModelOrder+1:2*bestModelOrder)).';
+            nVals = obj.nSpace(bestModelParams(2*bestModelOrder+1:end)).';
+        end
+        
+        function [testedParameters, likelihoods] = sliceSampling(obj, edc_db, modelOrder, timeAxis)
+            % Following Jasa, T. & Xiang, N. "Efficient estimation of decay parameters in acoustically coupled-spaces using slice sampling." J Acoust Soc Am 126, 1269–1279 (2009).
+
+            assert(length(obj.tSpace)==length(obj.tSpace) && length(obj.tSpace)==length(obj.tSpace), 'There must be an equal number of T, A, and N values in the parameter space.');
+            nParameters = modelOrder*2+1;
+
+            testedParameters = zeros(obj.nIterations, nParameters);
+            likelihoods = zeros(obj.nIterations, 1);
+            
+            % randomly draw first parameter values (indices)
+            x0 = randi(obj.nPointsPerDim, nParameters, 1);
+            
+            % evaluate likelihood for these parameters, and multiply with a
+            % random number between 0...1 to determine a likelihood threshold
+            y0 = rand * evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)).', obj.aSpace(x0(modelOrder+1:2*modelOrder)).', obj.nSpace(x0(2*modelOrder+1)), timeAxis);
+            
+            % start to iterate
+            for sampleIdx=1:obj.nIterations
+                % determine which variable is changed: variables are varied 
+                % in turn
+                paramIdx = mod(sampleIdx-1, nParameters) + 1; 
+                
+                % =======
+                % 1: Vary parameter until slice is established: the slice 
+                % is the region, for which the likelihood is higher than 
+                % the previously found likelihood threshold y0
+
+                % Find left edge of slice: decrease parameter value until
+                % likelihood is below threshold
+                thisX0Left = x0;
+                while(thisX0Left(paramIdx)>1)
+                    thisX0Left(paramIdx) = thisX0Left(paramIdx) - 1;
+                    thisY0Left = evaluateLikelihood(edc_db, obj.tSpace(thisX0Left(1:modelOrder)).', obj.aSpace(thisX0Left(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Left(2*modelOrder+1)), timeAxis);
+
+                    if(thisY0Left < y0)
+                        break;
+                    end
+                end
+
+                % Find right edge of slice: increase parameter value until
+                % likelihood is below threshold
+                thisX0Right = x0;
+                while(thisX0Right(paramIdx)<obj.nPointsPerDim-1)
+                    thisX0Right(paramIdx) = thisX0Right(paramIdx) + 1;
+                    thisY0Right = evaluateLikelihood(edc_db, obj.tSpace(thisX0Right(1:modelOrder)).', obj.aSpace(thisX0Right(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Right(2*modelOrder+1)), timeAxis);
+
+                    if(thisY0Right < y0)
+                        break;
+                    end
+                end
+                
+                % =======
+                % 2: Draw new parameter value from the slice, to find a new 
+                % and higher likelihood (and threshold)
+                while(true)
+                    % copy old parameter values
+                    x1 = x0;
+                    
+                    % randomly draw varied parameter (index) from the slice
+                    x1(paramIdx) = randi(thisX0Right(paramIdx)-thisX0Left(paramIdx)+1) + thisX0Left(paramIdx) - 1;
+                    
+                    % evaluate likelihood for drawn parameter
+                    y1 = evaluateLikelihood(edc_db, obj.tSpace(x1(1:modelOrder)).', obj.aSpace(x1(modelOrder+1:2*modelOrder)).', obj.nSpace(x1(2*modelOrder+1)), timeAxis);
+
+                    if(y1>y0)
+                        % higher likelihood found, continue with next 
+                        % iteration step
+                        break;
+                    else
+                        % drawn value is not actually in slice due to 
+                        % sampling rate error (slice is established as 
+                        % multiples of a step), therefore adapt slice 
+                        % interval
+                        
+                        % find out which edge of the slice was wrong
+                        if vecnorm(x1-thisX0Left) < vecnorm(x1-thisX0Right)
+                            thisX0Left = x1;
+                        else
+                            thisX0Right = x1;
+                        end
+                    end
+                end
+                
+                % Save tested parameters and likelihood of this iteration
+                testedParameters(sampleIdx, :) = x1;
+                likelihoods(sampleIdx) = y1;
+
+                % prepare for next iteration: new threshold
+                y0 = rand*y1;
+                x0 = x1;
+            end
+        end
+    end
+    methods(Static)
+        function likelihood = evaluateBayesianLikelihood(edc_db, T, A, N, timeAxis)
+            % Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011).
+
+            % Calculate model EDC
+            modelEDC = decayModel(T, A, N, timeAxis, true); % compensateULI=true
+            modelEDC = sum(modelEDC, 2);
+
+            % Convert to dB (true EDC is already db)
+            modelEDC = 10*log10(modelEDC);
+
+            % Evaluate Likelihood
+            K = length(timeAxis); % Eq. (1)
+            E = 0.5 * sum((edc_db - modelEDC).^2); % Eq. (13)
+            likelihood = 0.5 * gamma(K/2) * (2*pi*E)^(-K/2); % Eq. (12)
+        end
+    end
+end
