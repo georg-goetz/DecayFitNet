@@ -1,6 +1,5 @@
 close all; clear variables; clc; lastwarn('');
 %% External dependencies
-addpath(genpath('octave'));
 
 %% Parameters
 audioPath = '../model';  %local path
