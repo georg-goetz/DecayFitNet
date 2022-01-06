@@ -15,7 +15,6 @@ parameterRanges.nRange = [-10, -2]; % 10^nRange
 nIterations = 50;
 
 %% Load an impulse
-
 [rir, fs] = audioread(fullfile(audioPath, rirFName));
 channels = size(rir, 2);
 
@@ -47,7 +46,7 @@ disp(nVals_decayFitNet)
 % Estimate true EDC
 trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); % doBackwardsInt=true, analyseFullRIR=true, normalize=true
 timeAxis = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs,1) );
-estimatedEDCs_decayfitnet = net.generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis).';
+estimatedEDCs_decayfitnet = generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis).';
 
 f = figure;
 f.Position = [150, 200, 1600, 600];
@@ -86,7 +85,7 @@ disp(aVals_bayesian)
 disp('==== Bayesian analysis: Estimated N values (linear scale): ====') 
 disp(nVals_bayesian)
 
-estimatedEDCs_bayesian = net.generateSyntheticEDCs(tVals_bayesian, aVals_bayesian, nVals_bayesian, timeAxis).';
+estimatedEDCs_bayesian = generateSyntheticEDCs(tVals_bayesian, aVals_bayesian, nVals_bayesian, timeAxis).';
 
 subplot(1, 2, 2);
 hold on;
