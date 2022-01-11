@@ -86,15 +86,15 @@ class DecayFitNetToolbox:
 
         The estimation returns:
             Tuple of:
+            1) List with:
             -- t_prediction : [batch, 3] : time_values for the 3 slopes
             -- a_prediction : [batch, 3] : amplitude_values for the 3 slopes
             -- n_prediction :  [batch, 1] : noise floor
-            List:
-            -- norm_vals : [batch, n_bands] : EDCs are normalized to 0dB, as customary for most decay analysis problems,
+            2) norm_vals : [batch, n_bands] : EDCs are normalized to 0dB, as customary for most decay analysis problems,
                                               but if the initial level is required, norm_vals will return it
 
         """
-        edcs, norm_vals, t_adjust, n_adjust = self._preprocess(signal)
+        edcs, __, norm_vals, scale_adjust_factors = self._preprocess(signal)
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
@@ -103,7 +103,7 @@ class DecayFitNetToolbox:
         t_prediction, a_prediction, n_prediction, __ = postprocess_parameters(ort_outs[0], ort_outs[1], ort_outs[2],
                                                                               ort_outs[3], self.device)
 
-        t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, t_adjust, n_adjust)
+        t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, scale_adjust_factors)
 
         return [t_prediction, a_prediction, n_prediction], norm_vals
 
@@ -123,8 +123,8 @@ class DecayFitNetToolbox:
         """
         # TODO fix comment example
 
-        # Write arbitary number (1) into T values that are equal to zero (inactive slope), because their amplitude will
-        # be 0 as well (i.e. they don't contribute to the EDC)
+        # Avoid inf/nan for T=0: Write arbitary number (1) into T values that are equal to zero (inactive slope),
+        # because their amplitude will be 0 as well (i.e. they don't contribute to the EDC)
         estimated_T[estimated_T == 0] = 1
 
         if time_axis is None:
@@ -133,14 +133,14 @@ class DecayFitNetToolbox:
             time_axis = (torch.linspace(0, l_edc * fs - 1, round((1/0.95)*l_edc * fs)) / fs).to(self.device)
 
         out = []
-        if len(estimated_T.shape) > 1:
+        if len(estimated_T.shape) > 1:  # if there are more than 1 RIRs
             for idx in range(estimated_T.shape[0]):
                 tmp = generate_synthetic_edc(T=estimated_T[idx:idx+1, :],
                                              A=estimated_A[idx:idx+1, :],
                                              noiseLevel=estimated_n[idx],
                                              t=time_axis,
                                              device=self.device)
-                # discard last 5 percent 
+                # discard last 5 percent
                 tmp = tmp[:, 0:round(0.95*tmp.shape[1])]
                 out.append(tmp)
             out = torch.stack(out, dim=0)  # Stack over batch
@@ -150,7 +150,7 @@ class DecayFitNetToolbox:
                                          noiseLevel=estimated_n,
                                          t=time_axis,
                                          device=self.device)
-            # discard last 5 percent 
+            # discard last 5 percent
             out = out[:, 0:round(0.95*out.shape[1])]
 
         return out

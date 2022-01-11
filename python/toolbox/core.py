@@ -43,7 +43,7 @@ class DecayDataset(Dataset):
             self.edcs = edcs[:, (n_slopes_min - 1) * edcs_per_slope:n_slopes_max * edcs_per_slope]
 
             # Put EDCs into dB
-            edcs_db = 10*torch.log10(self.edcs)
+            edcs_db = 10 * torch.log10(self.edcs)
             assert not torch.any(torch.isnan(edcs_db)), 'NaN values in db EDCs'
 
             # Normalize dB values to lie between -1 and 1 (input scaling)
@@ -57,13 +57,13 @@ class DecayDataset(Dataset):
 
             # Generate vector that specifies how many slopes are in every EDC
             self.n_slopes = torch.zeros((1, self.edcs.shape[1]))
-            for slope_idx in range(n_slopes_min, n_slopes_max+1):
+            for slope_idx in range(n_slopes_min, n_slopes_max + 1):
                 self.n_slopes[0, (slope_idx - 1) * edcs_per_slope:slope_idx * edcs_per_slope] = slope_idx - 1
             self.n_slopes = self.n_slopes.long()
 
             # Noise level values are used in training for the noise loss
             noise_levels = torch.from_numpy(noise_levels).float()
-            self.noise_levels = noise_levels[:, (n_slopes_min-1)*edcs_per_slope:n_slopes_max*edcs_per_slope]
+            self.noise_levels = noise_levels[:, (n_slopes_min - 1) * edcs_per_slope:n_slopes_max * edcs_per_slope]
 
             assert self.edcs.shape[1] == self.noise_levels.shape[1], 'More EDCs than noise_levels'
         else:
@@ -110,29 +110,30 @@ class DecayFitNetLinear(nn.Module):
         # Base Network
         self.conv1 = nn.Conv1d(1, n_filters, kernel_size=13, padding=6)
         self.maxpool1 = nn.MaxPool1d(5)
-        self.conv2 = nn.Conv1d(n_filters, n_filters*2, kernel_size=7, padding=3)
+        self.conv2 = nn.Conv1d(n_filters, n_filters * 2, kernel_size=7, padding=3)
         self.maxpool2 = nn.MaxPool1d(5)
-        self.conv3 = nn.Conv1d(n_filters*2, n_filters*2, kernel_size=7, padding=3)
+        self.conv3 = nn.Conv1d(n_filters * 2, n_filters * 2, kernel_size=7, padding=3)
         self.maxpool3 = nn.MaxPool1d(2)
-        self.input = nn.Linear(2*n_filters*2, n_max_units)
+        self.input = nn.Linear(2 * n_filters * 2, n_max_units)
 
-        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer**i)),
-                                                round(n_max_units * (reduction_per_layer**(i+1)))) for i in range(n_layers-1)])
+        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer ** i)),
+                                                round(n_max_units * (reduction_per_layer ** (i + 1)))) for i in
+                                      range(n_layers - 1)])
 
         # T_vals
         self.final1_t = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_t = nn.Linear(50, n_slopes)
 
         # A_vals
-        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_a = nn.Linear(50, n_slopes)
 
         # Noise
-        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_n = nn.Linear(50, 1)
 
         # N Slopes
-        self.final1_n_slopes = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final1_n_slopes = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_n_slopes = nn.Linear(50, n_slopes)
 
     def forward(self, edcs):
@@ -170,7 +171,6 @@ class DecayFitNetLinear(nn.Module):
         return t, a, n_exponent, n_slopes
 
 
-
 class DecayFitNetLinearExactlyNSlopes(nn.Module):
     def __init__(self, n_slopes, n_max_units, n_filters, n_layers, relu_slope, dropout, reduction_per_layer, device):
         super(DecayFitNetLinearExactlyNSlopes, self).__init__()
@@ -184,25 +184,26 @@ class DecayFitNetLinearExactlyNSlopes(nn.Module):
         # Base Network
         self.conv1 = nn.Conv1d(1, n_filters, kernel_size=13, padding=6)
         self.maxpool1 = nn.MaxPool1d(10)
-        self.conv2 = nn.Conv1d(n_filters, n_filters*2, kernel_size=7, padding=3)
+        self.conv2 = nn.Conv1d(n_filters, n_filters * 2, kernel_size=7, padding=3)
         self.maxpool2 = nn.MaxPool1d(8)
-        self.conv3 = nn.Conv1d(n_filters*2, n_filters*4, kernel_size=7, padding=3)
+        self.conv3 = nn.Conv1d(n_filters * 2, n_filters * 4, kernel_size=7, padding=3)
         self.maxpool3 = nn.MaxPool1d(6)
-        self.input = nn.Linear(5*n_filters*4, n_max_units)
+        self.input = nn.Linear(5 * n_filters * 4, n_max_units)
 
-        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer**i)),
-                                                round(n_max_units * (reduction_per_layer**(i+1)))) for i in range(n_layers-1)])
+        self.linears = nn.ModuleList([nn.Linear(round(n_max_units * (reduction_per_layer ** i)),
+                                                round(n_max_units * (reduction_per_layer ** (i + 1)))) for i in
+                                      range(n_layers - 1)])
 
         # T_vals
         self.final1_t = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_t = nn.Linear(50, n_slopes)
 
         # A_vals
-        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final1_a = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_a = nn.Linear(50, n_slopes)
 
         # Noise
-        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers-1))), 50)
+        self.final1_n = nn.Linear(round(n_max_units * (reduction_per_layer ** (n_layers - 1))), 50)
         self.final2_n = nn.Linear(50, 1)
 
     def forward(self, edcs):
@@ -297,14 +298,16 @@ class FilterByOctaves(nn.Module):
             center_freq = center_freqs[band_idx]
             if abs(center_freq) < 1e-6:
                 # Lowpass band below lowest octave band
-                f_cutoff = (1 / np.sqrt(2)) * center_freqs[band_idx+1]
+                f_cutoff = (1 / np.sqrt(2)) * center_freqs[band_idx + 1]
                 this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='lowpass', analog=False, output='sos')
-            elif abs(center_freq-fs/2) < 1e-6:
-                f_cutoff = np.sqrt(2) * center_freqs[band_idx-1]
-                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='highpass', analog=False, output='sos')
+            elif abs(center_freq - fs / 2) < 1e-6:
+                f_cutoff = np.sqrt(2) * center_freqs[band_idx - 1]
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='highpass', analog=False,
+                                               output='sos')
             else:
                 f_cutoff = center_freq * np.array([1 / np.sqrt(2), np.sqrt(2)])
-                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='bandpass', analog=False, output='sos')
+                this_sos = scipy.signal.butter(N=order, Wn=f_cutoff, fs=fs, btype='bandpass', analog=False,
+                                               output='sos')
 
             sos.append(torch.from_numpy(this_sos))
 
@@ -329,7 +332,7 @@ class Normalizer(torch.nn.Module):
 
 def discard_lastNPercent(edc: torch.Tensor, nPercent: float) -> torch.Tensor:
     # Discard last n%
-    last_id = int(np.round((1-nPercent/100) * edc.shape[-1]))
+    last_id = int(np.round((1 - nPercent / 100) * edc.shape[-1]))
     out = edc[..., 0:last_id]
 
     return out
@@ -344,11 +347,11 @@ def discard_below(edc: torch.Tensor, threshold_val: float) -> torch.Tensor:
     return out
 
 
-def discard_trailing_zeros(edc: torch.Tensor) -> torch.Tensor:
-    out = edc.detach().clone()
+def discard_trailing_zeros(rir: torch.Tensor) -> torch.Tensor:
+    out = rir.detach().clone()
 
-    # count zeros from back to find last sample above threshold
-    last_above_thres = out.shape[-1] - torch.max((out.flip(-1) == 0).sum(dim=-1))
+    # find first non-zero element from back
+    last_above_thres = out.shape[-1] - torch.argmax((out.flip(-1) != 0).squeeze().int())
 
     # discard from that sample onwards
     out = out[..., :last_above_thres]
@@ -357,7 +360,7 @@ def discard_trailing_zeros(edc: torch.Tensor) -> torch.Tensor:
 
 class PreprocessRIR(nn.Module):
     """ Preprocess a RIR to extract the EDC and prepare it for the neural network model.
-        The preprocessing includes: (Upated 24.06.2021):
+        The preprocessing includes:
 
         # RIR -> Filterbank -> octave-band filtered RIR
         # octave-band filtered RIR -> backwards integration -> EDC
@@ -370,9 +373,8 @@ class PreprocessRIR(nn.Module):
         # EDC_db -> normalization -> EDC_final that is the input to the network
     """
 
-    def __init__(self, input_transform: Dict, sample_rate: int = 48000, filter_frequencies=None,
+    def __init__(self, input_transform: Dict = None, sample_rate: int = 48000, filter_frequencies: List = None,
                  output_size: int = 100):
-
         super(PreprocessRIR, self).__init__()
 
         if filter_frequencies is None:
@@ -391,21 +393,29 @@ class PreprocessRIR(nn.Module):
         self._filter_frequencies = filter_frequencies
         self.filterbank.set_center_freqs(filter_frequencies)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
         out, norm_vals = self.schroeder(x)
 
         # Discard all below -140 dB
         out = discard_below(out, 1e-14)
 
-        # Get t-adjust and n-adjust factors:
-        # T value predictions have to be adjusted for the time-scale conversion (downsampling)
-        # N value predictions have to be converted from exponent representation to actual value and adjusted for
-        # the downsampling
-        t_adjust = 10 / (out.shape[2] / self.sample_rate)
-        n_adjust = out.shape[2] / 100
+        time_axis = torch.linspace(0, (out.shape[2] - 1) / self.sample_rate, self.output_size)
 
-        # Discard last 5%
-        out = discard_lastNPercent(out, 5)
+        # DecayFitNet: Get t-adjust factors: T value predictions have to be adjusted for the time-scale conversion
+        if self.input_transform is not None:
+            t_adjust = 10 / (out.shape[2] / self.sample_rate)
+        else:
+            t_adjust = 1
+
+        # N values have to be adjusted for downsampling
+        n_adjust = out.shape[2] / self.output_size
+
+        # Write into one dict
+        scale_adjust_factors = {"t_adjust": t_adjust, "n_adjust": n_adjust}
+
+        # DecayFitNet: Discard last 5%
+        if self.input_transform is not None:
+            out = discard_lastNPercent(out, 5)
 
         # Convert to dB
         out = 10 * torch.log10(out + self.eps)
@@ -413,14 +423,15 @@ class PreprocessRIR(nn.Module):
         # Resample to 100 samples
         out = torch.nn.functional.interpolate(out, size=self.output_size, mode='linear', align_corners=True)
 
-        # Normalize with input transform
-        out = 2 * out / self.input_transform["edcs_db_normfactor"]
-        out = out + 1
+        # DecayFitNet: Normalize with input transform
+        if self.input_transform is not None:
+            out = 2 * out / self.input_transform["edcs_db_normfactor"]
+            out = out + 1
 
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
         out = out.view(-1, out.shape[-1]).type(torch.float32)
 
-        return out, norm_vals, t_adjust, n_adjust
+        return out, time_axis, norm_vals, scale_adjust_factors
 
     def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         out = discard_trailing_zeros(rir)
@@ -430,7 +441,7 @@ class PreprocessRIR(nn.Module):
 
         # Backwards integral
         out = torch.flip(out, [2])
-        out = (1 / out.shape[2]) * torch.cumsum(out**2, 2)
+        out = (1 / out.shape[2]) * torch.cumsum(out ** 2, 2)
         out = torch.flip(out, [2])
 
         # Normalize to 1
@@ -499,13 +510,13 @@ def postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_pr
     return t_prediction, a_prediction, n_prediction, n_slopes_prediction
 
 
-def adjust_timescale(t_prediction, n_prediction, t_adjust, n_adjust):
+def adjust_timescale(t_prediction, n_prediction, scale_adjust_factors):
     # T value predictions have to be adjusted for the time-scale conversion (downsampling)
-    t_prediction = t_prediction / t_adjust
+    t_prediction = t_prediction / scale_adjust_factors['t_adjust']
 
     # N value predictions have to be converted from exponent representation to actual value and adjusted for
     # the downsampling
-    n_prediction = n_prediction / n_adjust
+    n_prediction = n_prediction / scale_adjust_factors['n_adjust']
 
     return t_prediction, n_prediction
 
@@ -516,7 +527,7 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
     l_edc = 10
 
     # Generate the t values that would be discarded as well, otherwise the models do not match.
-    t = (torch.linspace(0, l_edc * fs - 1, round((1/0.95)*l_edc * fs)) / fs).to(device)
+    t = (torch.linspace(0, l_edc * fs - 1, round((1 / 0.95) * l_edc * fs)) / fs).to(device)
 
     # Clamp noise to reasonable values to avoid numerical problems and go from exponent to actual noise value
     n_exp_prediction = torch.clamp(n_exp_prediction, -32, 32)
@@ -533,7 +544,7 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
 
     # discard last 5 percent (i.e. the step which is already done for the true EDC and the test datasets prior to
     # saving them to the .mat files that are loaded in the beginning of this script
-    edc_prediction = edc_prediction[:, 0:l_edc*fs]
+    edc_prediction = edc_prediction[:, 0:l_edc * fs]
 
     if plot_fit:
         for idx in range(0, edcs_true.shape[0]):
@@ -552,3 +563,36 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
         loss = loss_fn(edc_true_db, edc_prediction_db)
 
     return loss
+
+
+def decay_model(t_vals, a_vals, n_val, time_axis, compensate_uli=False):
+    # get decay rate: decay energy should have decreased by 60 db after T seconds
+    zero_t = (t_vals == 0)
+    assert(np.all(a_vals[zero_t] == 0)), "T values equal zero detected, for which A values are nonzero. This yields " \
+                                         "division by zero. For inactive slopes, set A to zero."
+    tau_vals = np.log(1e6) / t_vals
+
+    # calculate decaying exponential terms
+    time_vals = - np.outer(time_axis, tau_vals)
+    exponentials = np.exp(time_vals)
+
+    # account for limited upper limit of integration, see: Xiang, N., Goggans, P. M., Jasa, T. & Kleiner, M. "Evaluation
+    # of decay times in coupled spaces: Reliability analysis of Bayeisan decay time estimation." J Acoust Soc Am 117,
+    # 3707–3715 (2005).
+    if compensate_uli:
+        exp_offset = exponentials[-1, :]
+    else:
+        exp_offset = 0
+
+    # calculate final exponential terms
+    exponentials = (exponentials - exp_offset) * a_vals
+
+    # zero exponentials where T=A=0 (they are NaN now because div by 0)
+    exponentials[:, zero_t] = 0
+
+    # calculate noise term
+    noise = n_val * np.linspace(len(time_axis), 1, len(time_axis))
+    noise = np.expand_dims(noise, 1)
+
+    edc_model = np.concatenate((exponentials, noise), 1)
+    return edc_model
