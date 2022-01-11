@@ -108,9 +108,8 @@ classdef BayesianDecayAnalysis < handle
         end
         
         function [tVals, aVals, nVals] = estimateParameters(obj, rir)
-            [edcs, scaleAdjustFactors] = obj.preprocess(rir);
-            timeAxis_ds = linspace(0, (length(rir) - 1) / obj.sampleRate, size(edcs, 1) ).';
-            
+            [edcs, timeAxis_ds, scaleAdjustFactors] = obj.preprocess(rir);
+ 
             % in nSlope estimation mode: max number of slopes is hard-coded
             % in get method (3 is usually enough)
             tVals = zeros(obj.maxNSlopes, obj.nBands);
@@ -131,7 +130,7 @@ classdef BayesianDecayAnalysis < handle
             [tVals, aVals, nVals] = obj.postprocessParameters(tVals, aVals, nVals, scaleAdjustFactors);
         end
         
-        function [edcs, scaleAdjustFactors] = preprocess(obj, signal)
+        function [edcs, timeAxis, scaleAdjustFactors] = preprocess(obj, signal)
             edcs = zeros(obj.outputSize, obj.nBands);
 
             % Extract decays
@@ -139,7 +138,6 @@ classdef BayesianDecayAnalysis < handle
             
             % Calculate adjustment factor n predictions
             scaleAdjustFactors.nAdjust = size(schroederDecays, 1) / obj.outputSize;
-            scaleAdjustFactors.tAdjust = size(signal, 1) / size(schroederDecays, 1);
             
             for bandIdx = 1:obj.nBands
                 % Do backwards integration
@@ -152,6 +150,8 @@ classdef BayesianDecayAnalysis < handle
                 thisDecay_ds = resample(thisDecay, obj.outputSize, length(thisDecay), 0, 5);
                 edcs(:, bandIdx) = thisDecay_ds;
             end
+            
+            timeAxis = linspace(0, (length(schroederDecays)-1)/obj.sampleRate, obj.outputSize).';
         end
         
         function [tVals, aVals, nVals] = postprocessParameters(obj, tVals, aVals, nVals, scaleAdjustFactors)
@@ -160,25 +160,18 @@ classdef BayesianDecayAnalysis < handle
             % Adjust for downsampling
             nVals = nVals / scaleAdjustFactors.nAdjust;
             
-            % Adjust for trailing zero removal
-            tVals = tVals / scaleAdjustFactors.tAdjust;
-            
             % In nSlope estimation mode: Get a binary mask to only use the 
             % number of slopes that were predicted, zero others
             if obj.nSlopes == 0
                 mask = (aVals == 0);
-                tVals(mask) = 0;
-            end
-
-            % Sort T and A values:
-            % 1) only in nSlope estimation mode: assign nans to sort the 
-            % inactive slopes to the end
-            if obj.nSlopes == 0
+                
+                % Assign NaN instead of zero for now, to sort inactive
+                % slopes to the end
                 tVals(mask) = NaN;
                 aVals(mask) = NaN;
             end
-            
-            % 2) sort
+
+            % Sort T and A values
             [tVals, sortIdxs] = sort(tVals, 1);
             for bandIdx = 1:obj.nBands
                 aThisBand = aVals(:, bandIdx);
@@ -192,7 +185,7 @@ classdef BayesianDecayAnalysis < handle
             end
         end
         
-        function [tVals, aVals, nVals] = estimation(obj, edc_db, timeAxis)
+        function [tVals, aVals, nVal] = estimation(obj, edc_db, timeAxis)
             % Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011).
             
             assert(length(edc_db) == length(timeAxis), 'Time axis does not match EDC.');
@@ -216,7 +209,7 @@ classdef BayesianDecayAnalysis < handle
                 
                 % Find maximum likelihood and corresponding parameter
                 % combination
-                [maxLikelihood, maxLikelihoodIdx] = max(likelihoods, [], 'all', 'linear');
+                [maxLikelihood, maxLikelihoodIdx] = max(likelihoods);
                 allMaxLikelihoodParams{thisModelOrderIdx} = testedParameters(maxLikelihoodIdx, :);
                 
                 % Determine BIC for this maximum likelihood and model
@@ -233,13 +226,13 @@ classdef BayesianDecayAnalysis < handle
 
             tVals = obj.tSpace(bestModelParams(1:bestModelOrder)).';
             aVals = obj.aSpace(bestModelParams(bestModelOrder+1:2*bestModelOrder)).';
-            nVals = obj.nSpace(bestModelParams(2*bestModelOrder+1:end)).';
+            nVal = obj.nSpace(bestModelParams(2*bestModelOrder+1:end)).';
         end
         
         function [testedParameters, likelihoods] = sliceSampling(obj, edc_db, modelOrder, timeAxis)
             % Following Jasa, T. & Xiang, N. "Efficient estimation of decay parameters in acoustically coupled-spaces using slice sampling." J Acoust Soc Am 126, 1269–1279 (2009).
 
-            assert(length(obj.tSpace)==length(obj.tSpace) && length(obj.tSpace)==length(obj.tSpace), 'There must be an equal number of T, A, and N values in the parameter space.');
+            assert(length(obj.tSpace)==length(obj.aSpace) && length(obj.tSpace)==length(obj.nSpace), 'There must be an equal number of T, A, and N values in the parameter space.');
             nParameters = modelOrder*2+1;
 
             testedParameters = zeros(obj.nIterations, nParameters);
@@ -250,11 +243,11 @@ classdef BayesianDecayAnalysis < handle
             
             % evaluate likelihood for these parameters, and multiply with a
             % random number between 0...1 to determine a likelihood threshold
-            y0 = rand * evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)).', obj.aSpace(x0(modelOrder+1:2*modelOrder)).', obj.nSpace(x0(2*modelOrder+1)), timeAxis);
+            y0 = rand * obj.evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)).', obj.aSpace(x0(modelOrder+1:2*modelOrder)).', obj.nSpace(x0(2*modelOrder+1)), timeAxis);
             
             % start to iterate
             for sampleIdx=1:obj.nIterations
-                % determine which variable is changed: variables are varied 
+                % determine which variable is varied: variables are varied 
                 % in turn
                 paramIdx = mod(sampleIdx-1, nParameters) + 1; 
                 
@@ -268,7 +261,7 @@ classdef BayesianDecayAnalysis < handle
                 thisX0Left = x0;
                 while(thisX0Left(paramIdx)>1)
                     thisX0Left(paramIdx) = thisX0Left(paramIdx) - 1;
-                    thisY0Left = evaluateLikelihood(edc_db, obj.tSpace(thisX0Left(1:modelOrder)).', obj.aSpace(thisX0Left(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Left(2*modelOrder+1)), timeAxis);
+                    thisY0Left = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Left(1:modelOrder)).', obj.aSpace(thisX0Left(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Left(2*modelOrder+1)), timeAxis);
 
                     if(thisY0Left < y0)
                         break;
@@ -280,7 +273,7 @@ classdef BayesianDecayAnalysis < handle
                 thisX0Right = x0;
                 while(thisX0Right(paramIdx)<obj.nPointsPerDim-1)
                     thisX0Right(paramIdx) = thisX0Right(paramIdx) + 1;
-                    thisY0Right = evaluateLikelihood(edc_db, obj.tSpace(thisX0Right(1:modelOrder)).', obj.aSpace(thisX0Right(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Right(2*modelOrder+1)), timeAxis);
+                    thisY0Right = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Right(1:modelOrder)).', obj.aSpace(thisX0Right(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Right(2*modelOrder+1)), timeAxis);
 
                     if(thisY0Right < y0)
                         break;
@@ -295,10 +288,11 @@ classdef BayesianDecayAnalysis < handle
                     x1 = x0;
                     
                     % randomly draw varied parameter (index) from the slice
-                    x1(paramIdx) = randi(thisX0Right(paramIdx)-thisX0Left(paramIdx)+1) + thisX0Left(paramIdx) - 1;
+                    % +1 -1 to avoid randi(0), which gives error
+                    x1(paramIdx) = randi(thisX0Right(paramIdx)-thisX0Left(paramIdx) + 1) + thisX0Left(paramIdx) - 1;
                     
                     % evaluate likelihood for drawn parameter
-                    y1 = evaluateLikelihood(edc_db, obj.tSpace(x1(1:modelOrder)).', obj.aSpace(x1(modelOrder+1:2*modelOrder)).', obj.nSpace(x1(2*modelOrder+1)), timeAxis);
+                    y1 = obj.evaluateLikelihood(edc_db, obj.tSpace(x1(1:modelOrder)).', obj.aSpace(x1(modelOrder+1:2*modelOrder)).', obj.nSpace(x1(2*modelOrder+1)), timeAxis);
 
                     if(y1>y0)
                         % higher likelihood found, continue with next 
@@ -330,7 +324,7 @@ classdef BayesianDecayAnalysis < handle
         end
     end
     methods(Static)
-        function likelihood = evaluateBayesianLikelihood(edc_db, T, A, N, timeAxis)
+        function likelihood = evaluateLikelihood(edc_db, T, A, N, timeAxis)
             % Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011).
 
             % Calculate model EDC
@@ -340,9 +334,12 @@ classdef BayesianDecayAnalysis < handle
             % Convert to dB (true EDC is already db)
             modelEDC = 10*log10(modelEDC);
 
+            % Exclude last 5% from likelihood (makes analysis more robust
+            % to edge effects caused by octave filtering)
+            K = round(0.95 * length(timeAxis)); % Eq. (1), 
+            
             % Evaluate Likelihood
-            K = length(timeAxis); % Eq. (1)
-            E = 0.5 * sum((edc_db - modelEDC).^2); % Eq. (13)
+            E = 0.5 * sum((edc_db(1:K) - modelEDC(1:K)).^2); % Eq. (13)
             likelihood = 0.5 * gamma(K/2) * (2*pi*E)^(-K/2); % Eq. (12)
         end
     end

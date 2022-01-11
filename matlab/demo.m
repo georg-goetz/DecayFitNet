@@ -12,7 +12,7 @@ nSlopes = 0; % 0 = estimate number of active slopes
 parameterRanges.tRange = [0.1, 3.5];
 parameterRanges.aRange = [-3, 0]; % 10^aRange
 parameterRanges.nRange = [-10, -2]; % 10^nRange
-nIterations = 50;
+nIterations = 100;
 
 %% Load an impulse
 [rir, fs] = audioread(fullfile(audioPath, rirFName));
@@ -32,6 +32,8 @@ end
 fprintf('The impulse has %d channels (before selecting the first one).\n', channels)
 fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', size(rir,1), fs, size(rir,1) / fs)
 %sound(rir, fs)
+
+% rir = [rir; zeros(24000, 1)];
 
 %% Load model and estimate parameters
 net = DecayFitNetToolbox(nSlopes, fs);

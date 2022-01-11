@@ -3,11 +3,11 @@ function edcModel = decayModel(T, A, N, timeAxis, compensateULI)
         compensateULI = false;
     end
     
-    % get decay rate: decay energy should have decreased by 60dB after T
+    % get decay rate: decay energy should have decreased by 60 dB after T
     % seconds
     zeroT = (T == 0);
-    assert(all(A(zeroT)==0), 'Zero T values detected, for which A values are nonzero. This yields division by zero. For inactive slopes, set A to zero.');
-    tauVals = -log(1e-6) ./ T; 
+    assert(all(A(zeroT)==0), 'T values equal zero detected, for which A values are nonzero. This yields division by zero. For inactive slopes, set A to zero.');
+    tauVals = log(1e6) ./ T; 
     
     % calculate decaying exponential terms
     timeVals = -timeAxis * tauVals.';
@@ -26,7 +26,7 @@ function edcModel = decayModel(T, A, N, timeAxis, compensateULI)
     % calculate final exponential terms
     exponentials = (exponentials - expOffset) .* A.';
     
-    % Zero exponentials where T=A=0 (they are NaN now because div by 0)
+    % zero exponentials where T=A=0 (they are NaN now because div by 0)
     exponentials(:, zeroT) = 0;
     
     % calculate noise term
