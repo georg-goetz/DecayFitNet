@@ -1,12 +1,10 @@
 classdef DecayFitNetToolbox < handle
     
-    properties
-        sampleRate
-        
+    properties        
         % filter frequency = 0 will give a lowpass band below the lowest
         % octave band, filter frequency = sample rate / 2 will give the
         % highpass band above the highest octave band
-        filterFrequencies = [125, 250, 500, 1000, 2000, 4000]
+        filterFrequencies
     end
     properties (SetAccess = private)
         version = '0.1.0'
@@ -16,19 +14,25 @@ classdef DecayFitNetToolbox < handle
         onnxModel
         networkName
         inputTransform
+        preprocessing
+        sampleRate
     end
     
     methods
-        function obj = DecayFitNetToolbox(nSlopes, sampleRate)
+        function obj = DecayFitNetToolbox(nSlopes, sampleRate, filterFrequencies)
             if nargin < 1
                 nSlopes = 0; % estimate number of slopes from data
             end
             if nargin < 2
                 sampleRate = 48000;
             end
+            if nargin < 3
+               filterFrequencies = [125, 250, 500, 1000, 2000, 4000];
+            end
                 
             obj.sampleRate = sampleRate;
             obj.nSlopes = nSlopes;
+            obj.filterFrequencies = filterFrequencies;
             
             % Load onnx model
             [thisDir, ~, ~] = fileparts(mfilename('fullpath'));
@@ -66,64 +70,29 @@ classdef DecayFitNetToolbox < handle
             end
             
             disp(obj.onnxModel)
-
+            
+            % Load input transform for preprocessing the network inputs
             fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
-            obj.inputTransform = py.pickle.load(fid);
+            inputTransform = py.pickle.load(fid);
+            obj.inputTransform = inputTransform;
+            
+            % Init preprocessing
+            obj.preprocessing = PreprocessRIR(inputTransform, sampleRate, filterFrequencies, obj.outputSize);
+            
         end
         
         function set.filterFrequencies(obj, filterFrequencies)
             assert(~any(filterFrequencies < 0) && ~any(filterFrequencies > obj.sampleRate/2), 'Invalid band frequency. Octave band frequencies must be bigger than 0 and smaller than fs/2. Set frequency=0 for a lowpass band and frequency=fs/2 for a highpass band.');
             filterFrequencies = sort(filterFrequencies);
             obj.filterFrequencies = filterFrequencies;
-        end
-                
-        function [edcs, scaleAdjustFactors] = preprocess(obj, signal)
-            nBands = length(obj.filterFrequencies);
             
-            nRirs = 1;
-            edcs = zeros(obj.outputSize, nRirs, nBands);
-            tAdjustFactors = zeros(1, nRirs, nBands);
-            nAdjustFactors = zeros(1, nRirs, nBands);
-            
-            % Extract decays
-            schroederDecays = rir2decay(signal, obj.sampleRate, obj.filterFrequencies, true, true, true);
-            
-            rirIdx = 1;
-            for bandIdx = 1:nBands
-                % Do backwards integration
-                thisDecay = schroederDecays(:, bandIdx);
-                                
-                % Convert to dB
-                thisDecay = pow2db(thisDecay+eps);
-                
-                % Discard below eps
-                thisLength = find(thisDecay <= pow2db(eps), 1);
-                if ~isempty(thisLength)
-                    thisDecay = thisDecay(1:thisLength);
-                end
-                
-                % Calculate adjustment factors for t and n predictions
-                tAdjustFactors(:, rirIdx, bandIdx) = 10/(length(thisDecay)/obj.sampleRate);
-                nAdjustFactors(:, rirIdx, bandIdx) = length(thisDecay) / obj.outputSize;
-                
-                % Discard last 5%
-                thisDecay = DecayFitNetToolbox.discardLast5(thisDecay);
-
-                % Resample to obj.outputSize (default = 100) samples
-                thisDecay_ds = resample(thisDecay, obj.outputSize, length(thisDecay), 0, 5);
-                edcs(1:obj.outputSize, rirIdx, bandIdx) = thisDecay_ds(1:obj.outputSize);
-
-                tmp = 2 * edcs(1:obj.outputSize, rirIdx, bandIdx) ./ obj.inputTransform{'edcs_db_normfactor'};
-                edcs(1:obj.outputSize, rirIdx, bandIdx) = tmp + 1;
+            if ~isempty(obj.preprocessing)
+                obj.preprocessing.filterFrequencies = filterFrequencies;
             end
-            
-            edcs = squeeze(edcs);
-            scaleAdjustFactors.tAdjust = squeeze(tAdjustFactors);
-            scaleAdjustFactors.nAdjust = squeeze(nAdjustFactors);
         end
         
         function [tPrediction, aPrediction, nPrediction] = estimateParameters(obj, rir)
-            [edcs, scaleAdjustFactors] = obj.preprocess(rir);
+            [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir);
             
             % Forward pass of the DecayFitNet
             net = str2func([obj.networkName, 'model']);
@@ -152,8 +121,8 @@ classdef DecayFitNetToolbox < handle
                 aPrediction(~mask) = 0;
             end
 
-            tPrediction = tPrediction ./ scaleAdjustFactors.tAdjust.';
-            nPrediction = nPrediction ./ scaleAdjustFactors.nAdjust.';
+            tPrediction = tPrediction ./ scaleAdjustFactors.tAdjust;
+            nPrediction = nPrediction ./ scaleAdjustFactors.nAdjust;
 
            if sortValues
                 % Sort T and A values:

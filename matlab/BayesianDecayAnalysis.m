@@ -1,27 +1,28 @@
 classdef BayesianDecayAnalysis < handle
     
     properties
-        sampleRate
-        
         % filter frequency = 0 will give a lowpass band below the lowest
         % octave band, filter frequency = sample rate / 2 will give the
         % highpass band above the highest octave band
-        filterFrequencies = [125, 250, 500, 1000, 2000, 4000]
+        filterFrequencies
         
         nPointsPerDim = 100; % defines parameter space and slice window (increment in steps of 1)
         nIterations = 50;
+        
+        nSlopes
     end
     properties (SetAccess = private)
         version = '0.1.0'
+        sampleRate
         outputSize = 100  % Timesteps of resampled RIRs
-        nSlopes
+        preprocessing
         
-        tRange;
-        aRange; % 10^aRange
-        nRange; % 10^nRange
-        tSpace;
-        aSpace;
-        nSpace;
+        tRange
+        aRange % 10^aRange
+        nRange % 10^nRange
+        tSpace
+        aSpace
+        nSpace
     end
     properties (Dependent)
         nBands
@@ -29,7 +30,7 @@ classdef BayesianDecayAnalysis < handle
     end
     
     methods
-        function obj = BayesianDecayAnalysis(nSlopes, sampleRate, parameterRanges, nIterations)
+        function obj = BayesianDecayAnalysis(nSlopes, sampleRate, parameterRanges, nIterations, filterFrequencies)
             if nargin < 1
                 nSlopes = 0; % estimate number of slopes from data
             end
@@ -44,20 +45,32 @@ classdef BayesianDecayAnalysis < handle
             if nargin < 4
                 nIterations = 50;
             end
+            if nargin < 5
+                filterFrequencies = [125, 250, 500, 1000, 2000, 4000];
+            end
                             
             obj.sampleRate = sampleRate;
+            obj.filterFrequencies = filterFrequencies;
             obj.nSlopes = nSlopes;
             
             obj.setParameterRanges(parameterRanges);
             obj.initParameterSpace();
             
             obj.nIterations = nIterations;
+            
+            % Init preprocessing
+            obj.preprocessing = PreprocessRIR([], sampleRate, filterFrequencies, obj.outputSize);
+            
         end
         
         function set.filterFrequencies(obj, filterFrequencies)
             assert(~any(filterFrequencies < 0) && ~any(filterFrequencies > obj.sampleRate/2), 'Invalid band frequency. Octave band frequencies must be bigger than 0 and smaller than fs/2. Set frequency=0 for a lowpass band and frequency=fs/2 for a highpass band.');
             filterFrequencies = sort(filterFrequencies);
             obj.filterFrequencies = filterFrequencies;
+            
+            if ~isempty(obj.preprocessing)
+                obj.preprocessing.filterFrequencies = filterFrequencies;
+            end
         end
         
         function set.nSlopes(obj, nSlopes)
@@ -108,7 +121,7 @@ classdef BayesianDecayAnalysis < handle
         end
         
         function [tVals, aVals, nVals] = estimateParameters(obj, rir)
-            [edcs, timeAxis_ds, scaleAdjustFactors] = obj.preprocess(rir);
+            [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir);
  
             % in nSlope estimation mode: max number of slopes is hard-coded
             % in get method (3 is usually enough)
@@ -129,36 +142,12 @@ classdef BayesianDecayAnalysis < handle
             % slopes, and sort
             [tVals, aVals, nVals] = obj.postprocessParameters(tVals, aVals, nVals, scaleAdjustFactors);
         end
-        
-        function [edcs, timeAxis, scaleAdjustFactors] = preprocess(obj, signal)
-            edcs = zeros(obj.outputSize, obj.nBands);
-
-            % Extract decays
-            schroederDecays = rir2decay(signal, obj.sampleRate, obj.filterFrequencies, true, true, true);
-            
-            % Calculate adjustment factor n predictions
-            scaleAdjustFactors.nAdjust = size(schroederDecays, 1) / obj.outputSize;
-            
-            for bandIdx = 1:obj.nBands
-                % Do backwards integration
-                thisDecay = schroederDecays(:, bandIdx);
-                                
-                % Convert to dB
-                thisDecay = pow2db(thisDecay);
-                                
-                % Resample to obj.outputSize (default = 100) samples
-                thisDecay_ds = resample(thisDecay, obj.outputSize, length(thisDecay), 0, 5);
-                edcs(:, bandIdx) = thisDecay_ds;
-            end
-            
-            timeAxis = linspace(0, (length(schroederDecays)-1)/obj.sampleRate, obj.outputSize).';
-        end
-        
+                
         function [tVals, aVals, nVals] = postprocessParameters(obj, tVals, aVals, nVals, scaleAdjustFactors)
             % Process the estimated t, a, and n parameters
             
             % Adjust for downsampling
-            nVals = nVals / scaleAdjustFactors.nAdjust;
+            nVals = nVals ./ scaleAdjustFactors.nAdjust;
             
             % In nSlope estimation mode: Get a binary mask to only use the 
             % number of slopes that were predicted, zero others
