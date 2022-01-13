@@ -31,22 +31,26 @@ def evaluate_likelihood(true_edc_db, t_vals, a_vals, n_val, time_axis):
 
 
 class BayesianDecayAnalysis:
-    def __init__(self, n_slopes: int = 0, sample_rate: int = 48000, parameter_ranges: dict = None,
-                 n_iterations: int = 50):
+    def __init__(self, n_slopes: int = 0, sample_rate: int = 48000, filter_frequencies: List = None,
+                 parameter_ranges: dict = None, n_iterations: int = 50):
+        self._version = '0.1.0'
+        self._output_size = 100
+        self._n_slopes = n_slopes
+        self._n_points_per_dim = 100
+        self.n_iterations = n_iterations
+
+        self._sample_rate = sample_rate
+
+        if filter_frequencies is None:
+            filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
+        self._filter_frequencies = []
+        self.set_filter_frequencies(filter_frequencies)
+
         if parameter_ranges is None:
             parameter_ranges = {'t_range': [0.1, 3.5],
                                 'a_range': [-3, 0],
                                 'n_range': [-10, -2]}
         self._parameter_ranges = parameter_ranges
-
-        self.sample_rate = sample_rate
-        self.n_iterations = n_iterations
-
-        self._version = '0.1.0'
-        self._output_size = 100
-        self._n_slopes = n_slopes
-        self._filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-        self._n_points_per_dim = 100
 
         # Init parameter ranges
         t_range, a_range, n_range = self.get_parameter_ranges()
@@ -61,14 +65,19 @@ class BayesianDecayAnalysis:
         self._n_space = n_space
 
         self._preprocess = PreprocessRIR(input_transform=None,
-                                         sample_rate=self.sample_rate,
+                                         sample_rate=self._sample_rate,
                                          filter_frequencies=self._filter_frequencies,
                                          output_size=self._output_size)
 
     def set_filter_frequencies(self, filter_frequencies):
-        filter_frequencies_np = np.ndarray(filter_frequencies)
-        assert not np.any(filter_frequencies_np < 0) and not np.any(filter_frequencies_np > self.sample_rate / 2)
+        filter_frequencies_np = np.asarray(filter_frequencies)
+        assert not np.any(filter_frequencies_np < 0) and not np.any(filter_frequencies_np > self._sample_rate / 2), \
+            'Filterbank center frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or ' \
+            'fs/2 will give lowpass or highpass bands'
         self._filter_frequencies = np.sort(filter_frequencies_np).tolist()
+
+        if hasattr(self, '_preprocess'):
+            self._preprocess.set_filter_frequencies(self._filter_frequencies)
 
     def set_n_slopes(self, n_slopes):
         assert n_slopes <= 3, 'Maximum number of supported slopes is 3.'

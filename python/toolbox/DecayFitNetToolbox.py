@@ -30,19 +30,19 @@ from .core import PreprocessRIR, generate_synthetic_edc, postprocess_parameters,
 
 
 class DecayFitNetToolbox:
-    output_size = 100  # Timesteps of downsampled RIRs
-    __version = '0.1.0'
-
     def __init__(self, sample_rate: int = 48000, filter_frequencies=None,
                  backend: str = 'pytorch', device: torch.device = torch.device('cpu')):
+        self._version = '0.1.0'
+        self.backend = backend
+        self.device = device
+        self._output_size = 100  # Timesteps of downsampled RIRs
+
+        self._sample_rate = sample_rate
 
         if filter_frequencies is None:
             filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-
-        self.backend = backend
-        self.fs = sample_rate
-        self.device = device
-        self._filter_frequencies = filter_frequencies
+        self._filter_frequencies = []
+        self.set_filter_frequencies(filter_frequencies)
 
         PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
 
@@ -52,14 +52,14 @@ class DecayFitNetToolbox:
         self.input_transform = pickle.load(open(os.path.join(PATH_ONNX, 'input_transform.pkl'), 'rb'))
 
         self._preprocess = PreprocessRIR(input_transform=self.input_transform,
-                                         sample_rate=self.fs,
+                                         sample_rate=self._sample_rate,
                                          filter_frequencies=self._filter_frequencies,
-                                         output_size=self.output_size)
+                                         output_size=self._output_size)
 
     def __repr__(self):
-        frmt = f'DecayFitNetToolbox {self.__version}  \n'
-        frmt += f'Input fs = {self.fs} \n'
-        frmt += f'Output_size = {self.output_size} \n'
+        frmt = f'DecayFitNetToolbox {self._version}  \n'
+        frmt += f'Input fs = {self._sample_rate} \n'
+        frmt += f'Output_size = {self._output_size} \n'
         frmt += f'Filter freqs = {self._filter_frequencies} \n'
 
         return frmt
@@ -69,8 +69,14 @@ class DecayFitNetToolbox:
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
     def set_filter_frequencies(self, filter_frequencies):
-        self._filter_frequencies = filter_frequencies
-        self._preprocess.set_filter_frequencies(filter_frequencies)
+        filter_frequencies_np = np.asarray(filter_frequencies)
+        assert not np.any(filter_frequencies_np < 0) and not np.any(filter_frequencies_np > self._sample_rate / 2), \
+            'Filterbank center frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or ' \
+            'fs/2 will give lowpass or highpass bands'
+        self._filter_frequencies = np.sort(filter_frequencies_np).tolist()
+
+        if hasattr(self, '_preprocess'):
+            self._preprocess.set_filter_frequencies(self._filter_frequencies)
 
     def preprocess(self, signal: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Preprocess an input signal to extract EDCs"""

@@ -270,7 +270,11 @@ class FilterByOctaves(nn.Module):
         return out
 
     def set_center_freqs(self, center_freqs):
-        self._center_freqs = center_freqs
+        center_freqs_np = np.asarray(center_freqs)
+        assert not np.any(center_freqs < 0) and not np.any(center_freqs > self.sample_rate / 2), \
+            'Center Frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or fs/2 ' \
+            'will give lowpass or highpass bands'
+        self._center_freqs = np.sort(center_freqs_np).tolist()
         self.sos = self._get_octave_filters(center_freqs, self.fs, self.order)
 
     def forward(self, x):
@@ -390,48 +394,51 @@ class PreprocessRIR(nn.Module):
                                           backend='scipy')
 
     def set_filter_frequencies(self, filter_frequencies):
-        self._filter_frequencies = filter_frequencies
+        filter_frequencies_np = np.asarray(filter_frequencies)
+        assert not np.any(filter_frequencies_np < 0) and not np.any(filter_frequencies_np > self.sample_rate / 2), \
+            'Filterbank center frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or ' \
+            'fs/2 will give lowpass or highpass bands'
+        self._filter_frequencies = np.sort(filter_frequencies_np).tolist()
         self.filterbank.set_center_freqs(filter_frequencies)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
-        out, norm_vals = self.schroeder(x)
+        # Extract decays: Do backwards integration
+        schroeder_decays, norm_vals = self.schroeder(x)
 
-        # Discard all below -140 dB
-        out = discard_below(out, 1e-14)
+        # Convert to dB
+        schroeder_decays_db = 10 * torch.log10(schroeder_decays + self.eps)
 
-        time_axis = torch.linspace(0, (out.shape[2] - 1) / self.sample_rate, self.output_size)
+        # N values have to be adjusted for downsampling
+        n_adjust = schroeder_decays_db.shape[2] / self.output_size
 
-        # DecayFitNet: Get t-adjust factors: T value predictions have to be adjusted for the time-scale conversion
+        # DecayFitNet: T value predictions have to be adjusted for the time-scale conversion
         if self.input_transform is not None:
-            t_adjust = 10 / (out.shape[2] / self.sample_rate)
+            t_adjust = 10 / (schroeder_decays_db.shape[2] / self.sample_rate)
         else:
             t_adjust = 1
 
-        # N values have to be adjusted for downsampling
-        n_adjust = out.shape[2] / self.output_size
-
-        # Write into one dict
-        scale_adjust_factors = {"t_adjust": t_adjust, "n_adjust": n_adjust}
-
         # DecayFitNet: Discard last 5%
         if self.input_transform is not None:
-            out = discard_lastNPercent(out, 5)
+            schroeder_decays_db = discard_lastNPercent(schroeder_decays_db, 5)
 
-        # Convert to dB
-        out = 10 * torch.log10(out + self.eps)
-
-        # Resample to 100 samples
-        out = torch.nn.functional.interpolate(out, size=self.output_size, mode='linear', align_corners=True)
+        # Resample to self.output_size samples
+        schroeder_decays_db_ds = torch.nn.functional.interpolate(schroeder_decays_db, size=self.output_size,
+                                                                 mode='linear', align_corners=True)
 
         # DecayFitNet: Normalize with input transform
         if self.input_transform is not None:
-            out = 2 * out / self.input_transform["edcs_db_normfactor"]
-            out = out + 1
+            schroeder_decays_db_ds = 2 * schroeder_decays_db_ds / self.input_transform["edcs_db_normfactor"]
+            schroeder_decays_db_ds = schroeder_decays_db_ds + 1
+
+        # Write adjust factors into one dict
+        scale_adjust_factors = {"t_adjust": t_adjust, "n_adjust": n_adjust}
+
+        time_axis_ds = torch.linspace(0, (schroeder_decays.shape[2] - 1) / self.sample_rate, self.output_size)
 
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
-        out = out.view(-1, out.shape[-1]).type(torch.float32)
+        schroeder_decays_db_ds = schroeder_decays_db_ds.view(-1, schroeder_decays_db_ds.shape[-1]).type(torch.float32)
 
-        return out, time_axis, norm_vals, scale_adjust_factors
+        return schroeder_decays_db_ds, time_axis_ds, norm_vals, scale_adjust_factors
 
     def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         out = discard_trailing_zeros(rir)
@@ -568,8 +575,8 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
 def decay_model(t_vals, a_vals, n_val, time_axis, compensate_uli=False):
     # get decay rate: decay energy should have decreased by 60 db after T seconds
     zero_t = (t_vals == 0)
-    assert(np.all(a_vals[zero_t] == 0)), "T values equal zero detected, for which A values are nonzero. This yields " \
-                                         "division by zero. For inactive slopes, set A to zero."
+    assert (np.all(a_vals[zero_t] == 0)), "T values equal zero detected, for which A values are nonzero. This yields " \
+                                          "division by zero. For inactive slopes, set A to zero."
     tau_vals = np.log(1e6) / t_vals
 
     # calculate decaying exponential terms
