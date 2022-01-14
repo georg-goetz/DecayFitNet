@@ -1,11 +1,6 @@
 classdef BayesianDecayAnalysis < handle
     
-    properties
-        % filter frequency = 0 will give a lowpass band below the lowest
-        % octave band, filter frequency = sample rate / 2 will give the
-        % highpass band above the highest octave band
-        filterFrequencies
-        
+    properties        
         nPointsPerDim = 100; % defines parameter space and slice window (increment in steps of 1)
         nIterations = 50;
         
@@ -46,11 +41,10 @@ classdef BayesianDecayAnalysis < handle
                 nIterations = 50;
             end
             if nargin < 5
-                filterFrequencies = [125, 250, 500, 1000, 2000, 4000];
+                filterFrequencies = [];
             end
                             
             obj.sampleRate = sampleRate;
-            obj.filterFrequencies = filterFrequencies;
             obj.nSlopes = nSlopes;
             
             obj.setParameterRanges(parameterRanges);
@@ -63,14 +57,12 @@ classdef BayesianDecayAnalysis < handle
             
         end
         
-        function set.filterFrequencies(obj, filterFrequencies)
-            assert(~any(filterFrequencies < 0) && ~any(filterFrequencies > obj.sampleRate/2), 'Invalid band frequency. Octave band frequencies must be bigger than 0 and smaller than fs/2. Set frequency=0 for a lowpass band and frequency=fs/2 for a highpass band.');
-            filterFrequencies = sort(filterFrequencies);
-            obj.filterFrequencies = filterFrequencies;
-            
-            if ~isempty(obj.preprocessing)
-                obj.preprocessing.filterFrequencies = filterFrequencies;
-            end
+        function setFilterFrequencies(obj, filterFrequencies)
+            obj.preprocessing.filterFrequencies = filterFrequencies;
+        end
+        
+        function filterFrequencies = getFilterFrequencies(obj)
+            filterFrequencies = obj.preprocessing.filterFrequencies;
         end
         
         function set.nSlopes(obj, nSlopes)
@@ -79,7 +71,7 @@ classdef BayesianDecayAnalysis < handle
         end
         
         function nBands = get.nBands(obj)
-            nBands = length(obj.filterFrequencies);
+            nBands = length(obj.getFilterFrequencies);
         end
         
         function maxNSlopes = get.maxNSlopes(obj)

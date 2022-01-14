@@ -73,11 +73,12 @@ mse_per_frequencyband = calc_mse(true_edc, fitted_edc_decayfitnet)
 # Plot
 time_axis = time_axis[0:round(0.95*len(time_axis))]  # discard last 5 percent of plot time axis
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
+filter_frequencies = decayfitnet.get_filter_frequencies()
 for band_idx in range(true_edc.shape[0]):
     plt.plot(time_axis, 10 * torch.log10(true_edc[band_idx, 0, :].squeeze()),
-             colors[band_idx], label='Measured EDC, {} Hz'.format(decayfitnet._filter_frequencies[band_idx]))
+             colors[band_idx], label='Measured EDC, {} Hz'.format(filter_frequencies[band_idx]))
     plt.plot(time_axis, 10 * torch.log10(fitted_edc_decayfitnet[band_idx, 0, :].squeeze()),
-             colors[band_idx] + '--', label='DecayFitNet fit, {} Hz'.format(decayfitnet._filter_frequencies[band_idx]))
+             colors[band_idx] + '--', label='DecayFitNet fit, {} Hz'.format(filter_frequencies[band_idx]))
 
 plt.xlabel('time [s]')
 plt.ylabel('energy [dB]')
@@ -134,11 +135,12 @@ mse_per_frequencyband = calc_mse(true_edc, fitted_edc_bayesian)
 # Plot
 time_axis = time_axis[0:round(0.95*len(time_axis))]  # discard last 5 percent of plot time axis
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
+filter_frequencies = decayfitnet.get_filter_frequencies()
 for band_idx in range(true_edc.shape[0]):
     plt.plot(time_axis, 10 * torch.log10(true_edc[band_idx, 0, :].squeeze()),
-             colors[band_idx], label='Measured EDC, {} Hz'.format(decayfitnet._filter_frequencies[band_idx]))
+             colors[band_idx], label='Measured EDC, {} Hz'.format(filter_frequencies[band_idx]))
     plt.plot(time_axis, 10 * torch.log10(fitted_edc_bayesian[band_idx, 0, :].squeeze()),
-             colors[band_idx] + '--', label='Bayesian fit, {} Hz'.format(decayfitnet._filter_frequencies[band_idx]))
+             colors[band_idx] + '--', label='Bayesian fit, {} Hz'.format(filter_frequencies[band_idx]))
 
 plt.xlabel('time [s]')
 plt.ylabel('energy [dB]')

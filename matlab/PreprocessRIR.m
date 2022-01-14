@@ -17,7 +17,7 @@ classdef PreprocessRIR < handle
             if nargin < 2
                 sampleRate = 48000;
             end
-            if nargin < 3
+            if nargin < 3 || isempty(filterFrequencies)
                 filterFrequencies = [125, 250, 500, 1000, 2000, 4000];
             end
             if nargin < 4

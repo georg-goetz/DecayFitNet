@@ -247,15 +247,15 @@ class FilterByOctaves(nn.Module):
     This is useful to get the decay curves of RIRs.
     """
 
-    def __init__(self, center_freqs=None, order=5, sample_rate=48000, backend='scipy'):
+    def __init__(self, center_frequencies=None, order=5, sample_rate=48000, backend='scipy'):
         super(FilterByOctaves, self).__init__()
 
-        if center_freqs is None:
-            center_freqs = [125, 250, 500, 1000, 2000, 4000]
-        self._center_freqs = center_freqs
+        if center_frequencies is None:
+            center_frequencies = [125, 250, 500, 1000, 2000, 4000]
+        self._center_frequencies = center_frequencies
         self._order = order
         self._sample_rate = sample_rate
-        self._sos = self._get_octave_filters(center_freqs, self._sample_rate, self._order)
+        self._sos = self._get_octave_filters(center_frequencies, self._sample_rate, self._order)
         self.backend = backend
 
     def _forward_scipy(self, x):
@@ -270,19 +270,22 @@ class FilterByOctaves(nn.Module):
 
     def set_sample_rate(self, sample_rate):
         self._sample_rate = sample_rate
-        self._sos = self._get_octave_filters(self._center_freqs, self._sample_rate, self._order)
+        self._sos = self._get_octave_filters(self._center_frequencies, self._sample_rate, self._order)
 
     def set_order(self, order):
         self._order = order
-        self._sos = self._get_octave_filters(self._center_freqs, self._sample_rate, self._order)
+        self._sos = self._get_octave_filters(self._center_frequencies, self._sample_rate, self._order)
 
-    def set_center_freqs(self, center_freqs):
+    def set_center_frequencies(self, center_freqs):
         center_freqs_np = np.asarray(center_freqs)
         assert not np.any(center_freqs_np < 0) and not np.any(center_freqs_np > self._sample_rate / 2), \
             'Center Frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or fs/2 ' \
             'will give lowpass or highpass bands'
-        self._center_freqs = np.sort(center_freqs_np).tolist()
+        self._center_frequencies = np.sort(center_freqs_np).tolist()
         self._sos = self._get_octave_filters(center_freqs, self._sample_rate, self._order)
+
+    def get_center_frequencies(self):
+        return self._center_frequencies
 
     def forward(self, x):
         if self.backend == 'scipy':
@@ -384,29 +387,23 @@ class PreprocessRIR(nn.Module):
         # EDC_db -> normalization -> EDC_final that is the input to the network
     """
 
-    def __init__(self, input_transform: Dict = None, sample_rate: int = 48000, filter_frequencies: List = None,
-                 output_size: int = 100):
+    def __init__(self, input_transform: Dict = None, sample_rate: int = 48000, output_size: int = 100,
+                 filter_frequencies: List = None):
         super(PreprocessRIR, self).__init__()
 
-        if filter_frequencies is None:
-            filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
-
         self.input_transform = input_transform
-        self._filter_frequencies = filter_frequencies
         self.output_size = output_size
         self.sample_rate = sample_rate
         self.eps = 1e-10
 
-        self.filterbank = FilterByOctaves(center_freqs=self._filter_frequencies, order=5, sample_rate=self.sample_rate,
-                                          backend='scipy')
+        self.filterbank = FilterByOctaves(order=5, sample_rate=self.sample_rate, backend='scipy',
+                                          center_frequencies=filter_frequencies)
 
     def set_filter_frequencies(self, filter_frequencies):
-        filter_frequencies_np = np.asarray(filter_frequencies)
-        assert not np.any(filter_frequencies_np < 0) and not np.any(filter_frequencies_np > self.sample_rate / 2), \
-            'Filterbank center frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or ' \
-            'fs/2 will give lowpass or highpass bands'
-        self._filter_frequencies = np.sort(filter_frequencies_np).tolist()
-        self.filterbank.set_center_freqs(filter_frequencies)
+        self.filterbank.set_center_frequencies(filter_frequencies)
+
+    def get_filter_frequencies(self):
+        return self.filterbank.get_center_frequencies()
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
         # Extract decays: Do backwards integration

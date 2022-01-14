@@ -1,10 +1,6 @@
 classdef DecayFitNetToolbox < handle
     
     properties        
-        % filter frequency = 0 will give a lowpass band below the lowest
-        % octave band, filter frequency = sample rate / 2 will give the
-        % highpass band above the highest octave band
-        filterFrequencies
     end
     properties (SetAccess = private)
         version = '0.1.0'
@@ -27,12 +23,11 @@ classdef DecayFitNetToolbox < handle
                 sampleRate = 48000;
             end
             if nargin < 3
-               filterFrequencies = [125, 250, 500, 1000, 2000, 4000];
+                filterFrequencies = [];
             end
                 
             obj.sampleRate = sampleRate;
             obj.nSlopes = nSlopes;
-            obj.filterFrequencies = filterFrequencies;
             
             % Load onnx model
             [thisDir, ~, ~] = fileparts(mfilename('fullpath'));
@@ -81,14 +76,12 @@ classdef DecayFitNetToolbox < handle
             
         end
         
-        function set.filterFrequencies(obj, filterFrequencies)
-            assert(~any(filterFrequencies < 0) && ~any(filterFrequencies > obj.sampleRate/2), 'Invalid band frequency. Octave band frequencies must be bigger than 0 and smaller than fs/2. Set frequency=0 for a lowpass band and frequency=fs/2 for a highpass band.');
-            filterFrequencies = sort(filterFrequencies);
-            obj.filterFrequencies = filterFrequencies;
-            
-            if ~isempty(obj.preprocessing)
-                obj.preprocessing.filterFrequencies = filterFrequencies;
-            end
+        function setFilterFrequencies(obj, filterFrequencies)
+            obj.preprocessing.filterFrequencies = filterFrequencies;
+        end
+        
+        function filterFrequencies = getFilterFrequencies(obj)
+            filterFrequencies = obj.preprocessing.filterFrequencies;
         end
         
         function [tPrediction, aPrediction, nPrediction] = estimateParameters(obj, rir)
