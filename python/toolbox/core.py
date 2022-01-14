@@ -247,21 +247,20 @@ class FilterByOctaves(nn.Module):
     This is useful to get the decay curves of RIRs.
     """
 
-    def __init__(self, center_freqs=None, order=5, fs=48000, backend='scipy'):
+    def __init__(self, center_freqs=None, order=5, sample_rate=48000, backend='scipy'):
         super(FilterByOctaves, self).__init__()
 
         if center_freqs is None:
             center_freqs = [125, 250, 500, 1000, 2000, 4000]
-
         self._center_freqs = center_freqs
-        self.order = order
-        self.fs = fs
+        self._order = order
+        self._sample_rate = sample_rate
+        self._sos = self._get_octave_filters(center_freqs, self._sample_rate, self._order)
         self.backend = backend
-        self.sos = self._get_octave_filters(center_freqs, self.fs, self.order)
 
     def _forward_scipy(self, x):
         out = []
-        for this_sos in self.sos:
+        for this_sos in self._sos:
             tmp = torch.clone(x).cpu().numpy()
             tmp = scipy.signal.sosfiltfilt(this_sos, tmp, axis=-1)
             out.append(torch.from_numpy(tmp.copy()))
@@ -269,13 +268,21 @@ class FilterByOctaves(nn.Module):
 
         return out
 
+    def set_sample_rate(self, sample_rate):
+        self._sample_rate = sample_rate
+        self._sos = self._get_octave_filters(self._center_freqs, self._sample_rate, self._order)
+
+    def set_order(self, order):
+        self._order = order
+        self._sos = self._get_octave_filters(self._center_freqs, self._sample_rate, self._order)
+
     def set_center_freqs(self, center_freqs):
         center_freqs_np = np.asarray(center_freqs)
-        assert not np.any(center_freqs < 0) and not np.any(center_freqs > self.sample_rate / 2), \
+        assert not np.any(center_freqs_np < 0) and not np.any(center_freqs_np > self._sample_rate / 2), \
             'Center Frequencies must be greater than 0 and smaller than fs/2. Exceptions: exactly 0 or fs/2 ' \
             'will give lowpass or highpass bands'
         self._center_freqs = np.sort(center_freqs_np).tolist()
-        self.sos = self._get_octave_filters(center_freqs, self.fs, self.order)
+        self._sos = self._get_octave_filters(center_freqs, self._sample_rate, self._order)
 
     def forward(self, x):
         if self.backend == 'scipy':
@@ -286,8 +293,8 @@ class FilterByOctaves(nn.Module):
 
     def get_filterbank_impulse_response(self):
         """Returns the impulse response of the filterbank."""
-        impulse = torch.zeros(1, self.fs * 20)
-        impulse[0, self.fs] = 1
+        impulse = torch.zeros(1, self._sample_rate * 20)
+        impulse[0, self._sample_rate] = 1
         response = self.forward(impulse)
         return response
 
@@ -390,7 +397,7 @@ class PreprocessRIR(nn.Module):
         self.sample_rate = sample_rate
         self.eps = 1e-10
 
-        self.filterbank = FilterByOctaves(center_freqs=self._filter_frequencies, order=5, fs=self.sample_rate,
+        self.filterbank = FilterByOctaves(center_freqs=self._filter_frequencies, order=5, sample_rate=self.sample_rate,
                                           backend='scipy')
 
     def set_filter_frequencies(self, filter_frequencies):
