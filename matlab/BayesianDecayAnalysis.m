@@ -20,7 +20,6 @@ classdef BayesianDecayAnalysis < handle
         nSpace
     end
     properties (Dependent)
-        nBands
         maxNSlopes
     end
     
@@ -70,10 +69,6 @@ classdef BayesianDecayAnalysis < handle
             obj.nSlopes = nSlopes;
         end
         
-        function nBands = get.nBands(obj)
-            nBands = length(obj.getFilterFrequencies);
-        end
-        
         function maxNSlopes = get.maxNSlopes(obj)
             if obj.nSlopes == 0
                 maxNSlopes = 3;
@@ -117,12 +112,13 @@ classdef BayesianDecayAnalysis < handle
  
             % in nSlope estimation mode: max number of slopes is hard-coded
             % in get method (3 is usually enough)
-            tVals = zeros(obj.maxNSlopes, obj.nBands);
-            aVals = zeros(obj.maxNSlopes, obj.nBands);
-            nVals = zeros(1, obj.nBands);
+            nBands = size(edcs, 2);
+            tVals = zeros(obj.maxNSlopes, nBands);
+            aVals = zeros(obj.maxNSlopes, nBands);
+            nVals = zeros(1, nBands);
             
             % go over all frequency bands
-            for bandIdx=1:obj.nBands
+            for bandIdx=1:nBands
                 [tPrediction, aPrediction, nPrediction] = obj.estimation(edcs(:, bandIdx), timeAxis_ds);
                 nSlopesPrediction = size(tPrediction, 1);
                 tVals(1:nSlopesPrediction, bandIdx) = tPrediction;
@@ -132,40 +128,10 @@ classdef BayesianDecayAnalysis < handle
             
             % Postprocess parameters: scale adjustment, zero inactive
             % slopes, and sort
-            [tVals, aVals, nVals] = obj.postprocessParameters(tVals, aVals, nVals, scaleAdjustFactors);
+            nSlopeEstimationMode = (obj.nSlopes == 0);
+            [tVals, aVals, nVals] = postprocessDecayParameters(tVals, aVals, nVals, scaleAdjustFactors, nSlopeEstimationMode);
         end
-                
-        function [tVals, aVals, nVals] = postprocessParameters(obj, tVals, aVals, nVals, scaleAdjustFactors)
-            % Process the estimated t, a, and n parameters
-            
-            % Adjust for downsampling
-            nVals = nVals ./ scaleAdjustFactors.nAdjust;
-            
-            % In nSlope estimation mode: Get a binary mask to only use the 
-            % number of slopes that were predicted, zero others
-            if obj.nSlopes == 0
-                mask = (aVals == 0);
-                
-                % Assign NaN instead of zero for now, to sort inactive
-                % slopes to the end
-                tVals(mask) = NaN;
-                aVals(mask) = NaN;
-            end
-
-            % Sort T and A values
-            [tVals, sortIdxs] = sort(tVals, 1);
-            for bandIdx = 1:obj.nBands
-                aThisBand = aVals(:, bandIdx);
-                aVals(:, bandIdx) = aThisBand(sortIdxs(:, bandIdx));
-            end
-            
-            % 3) only in nSlope estimation mode: set nans to zero again
-            if obj.nSlopes == 0
-                tVals(isnan(tVals)) = 0;  
-                aVals(isnan(aVals)) = 0; 
-            end
-        end
-        
+                        
         function [tVals, aVals, nVal] = estimation(obj, edc_db, timeAxis)
             % Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011).
             

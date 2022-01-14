@@ -1,4 +1,4 @@
-## Demo for the DecayFitNet Toolbox
+# Demo for the DecayFitNet Toolbox
 
 import torch
 import torchaudio
@@ -36,7 +36,7 @@ if len(rir.shape) > 1:
 
 # Delete potential fade-out windows
 if fadeout_length > 0:
-    rir = rir[:, 0:round(-fadeout_length*fs)]
+    rir = rir[:, 0:round(-fadeout_length * fs)]
 
 # ===============================================================================
 # Analyze with DecayFitNet
@@ -62,16 +62,16 @@ true_edc = discard_lastNPercent(true_edc, 5)
 # 3) Permute into same order as estimated fit
 true_edc = true_edc.permute(1, 0, 2)
 
-fitted_edc_decayfitnet = decayfitnet.generate_EDCs(estimated_parameters_decayfitnet[0],
-                                                   estimated_parameters_decayfitnet[1],
-                                                   estimated_parameters_decayfitnet[2],
+fitted_edc_decayfitnet = decayfitnet.generate_EDCs(torch.from_numpy(estimated_parameters_decayfitnet[0]),
+                                                   torch.from_numpy(estimated_parameters_decayfitnet[1]),
+                                                   torch.from_numpy(estimated_parameters_decayfitnet[2]),
                                                    time_axis=time_axis)
 
 # Calculate MSE between true EDC and fitted EDC
 mse_per_frequencyband = calc_mse(true_edc, fitted_edc_decayfitnet)
 
 # Plot
-time_axis = time_axis[0:round(0.95*len(time_axis))]  # discard last 5 percent of plot time axis
+time_axis = time_axis[0:round(0.95 * len(time_axis))]  # discard last 5 percent of plot time axis
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
 filter_frequencies = decayfitnet.get_filter_frequencies()
 for band_idx in range(true_edc.shape[0]):
@@ -88,7 +88,7 @@ plt.title('DecayFitNet')
 plt.show()
 
 # How to change the center frequencies manually (can also be set directly in init of DecayFitNet)
-decayfitnet.set_filter_frequencies([0, 125, 250, 500, 1000, 2000, 4000, fs/2])
+decayfitnet.set_filter_frequencies([0, 125, 250, 500, 1000, 2000, 4000, fs / 2])
 estimated_parameters_decayfitnet, norm_vals_decayfitnet = decayfitnet.estimate_parameters(rir)
 print('==== DecayFitNet: Estimated T values (in seconds, T=0 indicates an inactive slope): ====\n'
       + str(estimated_parameters_decayfitnet[0]))
@@ -133,7 +133,7 @@ fitted_edc_bayesian = decayfitnet.generate_EDCs(torch.from_numpy(estimated_param
 mse_per_frequencyband = calc_mse(true_edc, fitted_edc_bayesian)
 
 # Plot
-time_axis = time_axis[0:round(0.95*len(time_axis))]  # discard last 5 percent of plot time axis
+time_axis = time_axis[0:round(0.95 * len(time_axis))]  # discard last 5 percent of plot time axis
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
 filter_frequencies = decayfitnet.get_filter_frequencies()
 for band_idx in range(true_edc.shape[0]):

@@ -6,7 +6,7 @@ import scipy.signal
 import scipy.special
 from typing import Union, List, Tuple
 
-from .core import PreprocessRIR, generate_synthetic_edc, postprocess_parameters, adjust_timescale, decay_model
+from .core import PreprocessRIR, _postprocess_parameters, decay_model
 
 
 def evaluate_likelihood(true_edc_db, t_vals, a_vals, n_val, time_axis):
@@ -73,10 +73,6 @@ class BayesianDecayAnalysis:
     def set_n_slopes(self, n_slopes):
         assert n_slopes <= 3, 'Maximum number of supported slopes is 3.'
         self._n_slopes = n_slopes
-
-    def get_n_bands(self):
-        n_bands = len(self.get_filter_frequencies())
-        return n_bands
 
     def get_max_n_slopes(self):
         if self._n_slopes == 0:
@@ -148,49 +144,25 @@ class BayesianDecayAnalysis:
         norm_vals = norm_vals.detach().numpy()
 
         # Init arrays
-        t_vals = np.zeros((self.get_max_n_slopes(), self.get_n_bands()))
-        a_vals = np.zeros((self.get_max_n_slopes(), self.get_n_bands()))
-        n_vals = np.zeros((1, self.get_n_bands()))
+        n_bands = edcs.shape[0]
+        t_vals = np.zeros((n_bands, self.get_max_n_slopes()))
+        a_vals = np.zeros((n_bands, self.get_max_n_slopes()))
+        n_vals = np.zeros((n_bands, 1))
 
         # Do Bayesian
         for band_idx, edc_this_band in enumerate(edcs):
             t_prediction, a_prediction, n_prediction = self._estimation(edc_this_band, time_axis_ds)
             n_slopes_prediction = t_prediction.shape[0]
-            t_vals[0:n_slopes_prediction, band_idx] = t_prediction
-            a_vals[0:n_slopes_prediction, band_idx] = a_prediction
-            n_vals[0, band_idx] = n_prediction
+            t_vals[band_idx, 0:n_slopes_prediction] = t_prediction
+            a_vals[band_idx, 0:n_slopes_prediction] = a_prediction
+            n_vals[band_idx, 0] = n_prediction
 
         # Postprocess parameters
-        t_vals, a_vals, n_vals = self._postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors)
+        n_slope_estimation_mode = (self._n_slopes == 0)
+        t_vals, a_vals, n_vals = _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors,
+                                                         n_slope_estimation_mode)
 
-        return [t_vals.T, a_vals.T, n_vals.T], norm_vals
-
-    def _postprocess_parameters(self, t_vals, a_vals, n_vals, scale_adjust_factors):
-        # Process the estimated t, a, and n parameters
-
-        # Adjust for downsampling
-        n_vals = n_vals / scale_adjust_factors['n_adjust']
-
-        # In nSlope estimation mode: get a binary mask to only use the number of slopes that were predicted, zero others
-        if self._n_slopes == 0:
-            mask = (a_vals == 0)
-
-            # Assign NaN instead of zero for now, to sort inactive slopes to the end
-            t_vals[mask] = np.nan
-            a_vals[mask] = np.nan
-
-        # Sort T and A values
-        sort_idxs = np.argsort(t_vals, 0)
-        for band_idx in range(self.get_n_bands()):
-            t_vals[:, band_idx] = t_vals[sort_idxs[:, band_idx], band_idx]
-            a_vals[:, band_idx] = a_vals[sort_idxs[:, band_idx], band_idx]
-
-        # In nSlope estimation mode: set nans to zero again
-        if self._n_slopes == 0:
-            t_vals[np.isnan(t_vals)] = 0
-            a_vals[np.isnan(a_vals)] = 0
-
-        return t_vals, a_vals, n_vals
+        return [t_vals, a_vals, n_vals], norm_vals
 
     def _estimation(self, edc_db, time_axis):
         # Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound

@@ -491,45 +491,35 @@ def generate_synthetic_edc(T, A, noiseLevel, t, device) -> torch.Tensor:
     return edc
 
 
-def postprocess_parameters(t_prediction, a_prediction, n_prediction, n_slopes_probabilities, device, sort_values=True):
-    # Clamp noise to reasonable values to avoid numerical problems and go from exponent to actual noise value
-    n_prediction = torch.clamp(n_prediction, -32, 32)
+def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, n_slope_estimation_mode):
+    # Process the estimated t, a, and n parameters
 
-    # Go from noise exponent to noise value
-    n_prediction = torch.pow(10, n_prediction)
+    # Adjust for downsampling
+    n_vals = n_vals / scale_adjust_factors['n_adjust']
 
-    # Get a binary mask to only use the number of slopes that were predicted, zero others
-    _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
-    n_slopes_prediction += 1  # because python starts at 0
-    temp = torch.linspace(1, 3, 3).repeat(n_slopes_prediction.shape[0], 1).to(device)
-    mask = temp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, 3))
-    a_prediction[~mask] = 0
+    # Only for DecayFitNet: T value predictions have to be adjusted for the time-scale conversion (downsampling)
+    t_vals = t_vals / scale_adjust_factors['t_adjust']  # factors are 1 for Bayesian
 
-    if sort_values:
-        # Sort T and A values:
-        # 1) assign nans to sort the inactive slopes to the end
-        t_prediction[~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
-        a_prediction[~mask] = float('nan')  # nan as a placeholder, gets replaced in a few lines
+    # In nSlope estimation mode: get a binary mask to only use the number of slopes that were predicted, zero others
+    if n_slope_estimation_mode:
+        mask = (a_vals == 0)
 
-        # 2) sort and set nans to zero again
-        t_prediction, sort_idxs = torch.sort(t_prediction)
-        for batch_idx, a_this_batch in enumerate(a_prediction):
-            a_prediction[batch_idx, :] = a_this_batch[sort_idxs[batch_idx]]
-        t_prediction[torch.isnan(t_prediction)] = 0  # replace nan from above
-        a_prediction[torch.isnan(a_prediction)] = 0  # replace nan from above
+        # Assign NaN instead of zero for now, to sort inactive slopes to the end
+        t_vals[mask] = np.nan
+        a_vals[mask] = np.nan
 
-    return t_prediction, a_prediction, n_prediction, n_slopes_prediction
+    # Sort T and A values
+    sort_idxs = np.argsort(t_vals, 1)
+    for band_idx in range(t_vals.shape[0]):
+        t_vals[band_idx, :] = t_vals[band_idx, sort_idxs[band_idx, :]]
+        a_vals[band_idx, :] = a_vals[band_idx, sort_idxs[band_idx, :]]
 
+    # In nSlope estimation mode: set nans to zero again
+    if n_slope_estimation_mode:
+        t_vals[np.isnan(t_vals)] = 0
+        a_vals[np.isnan(a_vals)] = 0
 
-def adjust_timescale(t_prediction, n_prediction, scale_adjust_factors):
-    # T value predictions have to be adjusted for the time-scale conversion (downsampling)
-    t_prediction = t_prediction / scale_adjust_factors['t_adjust']
-
-    # N value predictions have to be converted from exponent representation to actual value and adjusted for
-    # the downsampling
-    n_prediction = n_prediction / scale_adjust_factors['n_adjust']
-
-    return t_prediction, n_prediction
+    return t_vals, a_vals, n_vals
 
 
 def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, device, training_flag=True,

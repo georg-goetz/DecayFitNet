@@ -26,7 +26,7 @@ import os
 from pathlib import Path
 from typing import Union, List, Tuple
 
-from .core import PreprocessRIR, generate_synthetic_edc, postprocess_parameters, adjust_timescale
+from .core import PreprocessRIR, generate_synthetic_edc, _postprocess_parameters
 
 
 class DecayFitNetToolbox:
@@ -94,12 +94,25 @@ class DecayFitNetToolbox:
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
-        ort_outs = [torch.from_numpy(jj) for jj in ort_outs]
+        # ort_outs = [torch.from_numpy(jj) for jj in ort_outs]
+        t_prediction, a_prediction, n_exp_prediction, n_slopes_probabilities = ort_outs
 
-        t_prediction, a_prediction, n_prediction, __ = postprocess_parameters(ort_outs[0], ort_outs[1], ort_outs[2],
-                                                                              ort_outs[3], self.device)
+        # Clamp noise to reasonable values to avoid numerical problems
+        n_exp_prediction = np.clip(n_exp_prediction, -32, 32)
+        # Go from noise exponent to noise value
+        n_prediction = np.power(10, n_exp_prediction)
 
-        t_prediction, n_prediction = adjust_timescale(t_prediction, n_prediction, scale_adjust_factors)
+        # Get a binary mask to only use the number of slopes that were predicted, zero others
+        n_slopes_prediction = np.argmax(n_slopes_probabilities, 1)
+        n_slopes_prediction += 1  # because python starts at 0
+        temp = np.tile(np.linspace(1, 3, 3, dtype=np.uint8), (n_slopes_prediction.shape[0], 1))
+        mask = (np.tile(np.expand_dims(n_slopes_prediction, 1), (1, 3)) < temp)
+        a_prediction[mask] = 0
+
+        n_slopes_estimation_mode = True  # TODO: change this after nSlopes are part of python toolbox
+        t_prediction, a_prediction, n_prediction = _postprocess_parameters(t_prediction, a_prediction, n_prediction,
+                                                                           scale_adjust_factors,
+                                                                           n_slopes_estimation_mode)
 
         return [t_prediction, a_prediction, n_prediction], norm_vals
 

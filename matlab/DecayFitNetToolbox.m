@@ -89,56 +89,24 @@ classdef DecayFitNetToolbox < handle
             
             % Forward pass of the DecayFitNet
             net = str2func([obj.networkName, 'model']);
-            [tPrediction, aPrediction, nPrediction, n_slopes_probabilities] = net(edcs, obj.onnxModel, 'InputDataPermutation', [2,1]);
+            [tPrediction, aPrediction, nExpPrediction, nSlopesProbabilities] = net(edcs, obj.onnxModel, 'InputDataPermutation', [2,1]);
             
-            [tPrediction, aPrediction, nPrediction] = obj.postprocessParameters(tPrediction, aPrediction, nPrediction, n_slopes_probabilities, true, scaleAdjustFactors);
-        end
-        
-        function [tPrediction, aPrediction, nPrediction, nSlopesPrediction] = postprocessParameters(obj, tPrediction, aPrediction, nPrediction, nSlopesProbabilities, sortValues, scaleAdjustFactors)
-        %% Process the estimated t, a, and n parameters (output of the decayfitnet) to meaningful values
-            if ~exist('sortValues', 'var')
-                sortValues = true;
-            end
-
-            % Clamp noise to reasonable values to avoid numerical problems and go from exponent to actual noise value
-            nPrediction = min(max(nPrediction, -32), 32);
+            % Clamp noise to reasonable values to avoid numerical problems
+            nExpPrediction = min(max(nExpPrediction, -32), 32);
 
             % Go from noise exponent to noise value
-            nPrediction = 10 .^ nPrediction;
+            nPrediction = 10 .^ nExpPrediction;
 
             % In nSlope inference mode: Get a binary mask to only use the number of slopes that were predicted, zero others
-            if obj.nSlopes == 0
+            nSlopeEstimationMode = (obj.nSlopes == 0);
+            if nSlopeEstimationMode
                 [~, nSlopesPrediction] = max(nSlopesProbabilities, [], 1);
                 tmp = repmat(linspace(1,3,3), [size(nSlopesPrediction,2), 1])';
                 mask = tmp <= repmat(nSlopesPrediction, [3,1]);
                 aPrediction(~mask) = 0;
             end
-
-            tPrediction = tPrediction ./ scaleAdjustFactors.tAdjust;
-            nPrediction = nPrediction ./ scaleAdjustFactors.nAdjust;
-
-           if sortValues
-                % Sort T and A values:
-                
-                % 1) only in nSlope inference mode: assign nans to sort the inactive slopes to the end
-                if obj.nSlopes == 0
-                    tPrediction(~mask) = NaN;
-                    aPrediction(~mask) = NaN;
-                end
-
-                % 2) sort
-                [tPrediction, sortIdxs] = sort(tPrediction, 1);
-                for batchIdx = 1: size(aPrediction, 2)
-                    aThisBatch = aPrediction(:, batchIdx);
-                    aPrediction(:, batchIdx) = aThisBatch(sortIdxs(:, batchIdx));
-                end
-                
-                % 3) only in nSlope inference mode: set nans to zero again
-                if obj.nSlopes == 0
-                    tPrediction(isnan(tPrediction)) = 0;  
-                    aPrediction(isnan(aPrediction)) = 0; 
-                end
-           end
+            
+            [tPrediction, aPrediction, nPrediction] = postprocessDecayParameters(tPrediction, aPrediction, nPrediction, scaleAdjustFactors, nSlopeEstimationMode);
         end
     end
     
