@@ -14,8 +14,8 @@ def evaluate_likelihood(true_edc_db, t_vals, a_vals, n_val, time_axis):
     # slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011)
 
     # Calculate model EDC
-    model_edc = decay_model(t_vals, a_vals, n_val, time_axis, compensate_uli=True)
-    model_edc = np.sum(model_edc, 1)
+    model_edc = decay_model(t_vals, a_vals, n_val, time_axis, compensate_uli=True, backend='np')
+    model_edc = np.sum(model_edc, 0)
 
     # Convert to dB (true EDC is already in db)
     model_edc = 10 * np.log10(model_edc)
@@ -34,7 +34,6 @@ class BayesianDecayAnalysis:
     def __init__(self, n_slopes: int = 0, sample_rate: int = 48000, parameter_ranges: dict = None,
                  n_iterations: int = 50, filter_frequencies: List = None):
         self._version = '0.1.0'
-        self._output_size = 100
         self._n_slopes = n_slopes
         self._n_points_per_dim = 100
         self.n_iterations = n_iterations
@@ -61,7 +60,7 @@ class BayesianDecayAnalysis:
 
         self._preprocess = PreprocessRIR(input_transform=None,
                                          sample_rate=self._sample_rate,
-                                         output_size=self._output_size,
+                                         output_size=100,
                                          filter_frequencies=filter_frequencies)
 
     def set_filter_frequencies(self, filter_frequencies):
@@ -69,6 +68,12 @@ class BayesianDecayAnalysis:
 
     def get_filter_frequencies(self):
         return self._preprocess.get_filter_frequencies()
+
+    def set_output_size(self, output_size):
+        self._preprocess.output_size = output_size
+
+    def get_output_size(self):
+        return self._preprocess.output_size
 
     def set_n_slopes(self, n_slopes):
         assert n_slopes <= 3, 'Maximum number of supported slopes is 3.'

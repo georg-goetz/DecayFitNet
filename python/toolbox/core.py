@@ -9,10 +9,6 @@ import matplotlib.pyplot as plt
 from typing import Tuple, TypeVar, Callable, Any, List, Dict
 import h5py
 
-T = TypeVar('T', bound=Callable[..., Any])
-
-
-# https://realpython.com/documenting-python-code/
 
 class DecayDataset(Dataset):
     """Decay dataset."""
@@ -344,9 +340,9 @@ class Normalizer(torch.nn.Module):
         return out
 
 
-def discard_lastNPercent(edc: torch.Tensor, nPercent: float) -> torch.Tensor:
+def discard_last_n_percent(edc: torch.Tensor, n_percent: float) -> torch.Tensor:
     # Discard last n%
-    last_id = int(np.round((1 - nPercent / 100) * edc.shape[-1]))
+    last_id = int(np.round((1 - n_percent / 100) * edc.shape[-1]))
     out = edc[..., 0:last_id]
 
     return out
@@ -387,7 +383,7 @@ class PreprocessRIR(nn.Module):
         # EDC_db -> normalization -> EDC_final that is the input to the network
     """
 
-    def __init__(self, input_transform: Dict = None, sample_rate: int = 48000, output_size: int = 100,
+    def __init__(self, input_transform: Dict = None, sample_rate: int = 48000, output_size: int = None,
                  filter_frequencies: List = None):
         super(PreprocessRIR, self).__init__()
 
@@ -423,26 +419,28 @@ class PreprocessRIR(nn.Module):
 
         # DecayFitNet: Discard last 5%
         if self.input_transform is not None:
-            schroeder_decays_db = discard_lastNPercent(schroeder_decays_db, 5)
+            schroeder_decays_db = discard_last_n_percent(schroeder_decays_db, 5)
 
-        # Resample to self.output_size samples
-        schroeder_decays_db_ds = torch.nn.functional.interpolate(schroeder_decays_db, size=self.output_size,
-                                                                 mode='linear', align_corners=True)
+        # Resample to self.output_size samples (if given, otherwise keep sampling rate)
+        if self.output_size is not None:
+            schroeder_decays_db = torch.nn.functional.interpolate(schroeder_decays_db, size=self.output_size,
+                                                                  mode='linear', align_corners=True)
 
         # DecayFitNet: Normalize with input transform
         if self.input_transform is not None:
-            schroeder_decays_db_ds = 2 * schroeder_decays_db_ds / self.input_transform["edcs_db_normfactor"]
-            schroeder_decays_db_ds = schroeder_decays_db_ds + 1
+            schroeder_decays_db = 2 * schroeder_decays_db / self.input_transform["edcs_db_normfactor"]
+            schroeder_decays_db = schroeder_decays_db + 1
 
         # Write adjust factors into one dict
         scale_adjust_factors = {"t_adjust": t_adjust, "n_adjust": n_adjust}
 
-        time_axis_ds = torch.linspace(0, (schroeder_decays.shape[2] - 1) / self.sample_rate, self.output_size)
+        # Calculate time axis: be careful, because schroeder_decays_db might be on a different time scale!
+        time_axis = torch.linspace(0, (schroeder_decays.shape[2] - 1) / self.sample_rate, schroeder_decays_db.shape[2])
 
         # Reshape freq bands as batch size, shape = [batch * freqs, timesteps]
-        schroeder_decays_db_ds = schroeder_decays_db_ds.view(-1, schroeder_decays_db_ds.shape[-1]).type(torch.float32)
+        schroeder_decays_db = schroeder_decays_db.view(-1, schroeder_decays_db.shape[-1]).type(torch.float32)
 
-        return schroeder_decays_db_ds, time_axis_ds, norm_vals, scale_adjust_factors
+        return schroeder_decays_db, time_axis, norm_vals, scale_adjust_factors
 
     def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         out = discard_trailing_zeros(rir)
@@ -460,35 +458,6 @@ class PreprocessRIR(nn.Module):
         out = out / norm_factors
 
         return out, norm_factors.squeeze(2)
-
-
-def generate_synthetic_edc(T, A, noiseLevel, t, device) -> torch.Tensor:
-    """ Generates an EDC from the estimated parameters."""
-    # Calculate decay rates, based on the requirement that after T60 seconds, the level must drop to -60dB
-    tau_vals = -torch.log(torch.Tensor([1e-6])).to(device) / T
-
-    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
-    t_rep = t.repeat(T.shape[0], T.shape[1], 1)
-    tau_vals_rep = tau_vals.unsqueeze(2).repeat(1, 1, t.shape[0])
-
-    # Calculate exponentials from decay rates
-    time_vals = -t_rep * tau_vals_rep
-    exponentials = torch.exp(time_vals)
-
-    # Offset is required to make last value of EDC be correct
-    exp_offset = exponentials[:, :, -1].unsqueeze(2).repeat(1, 1, t.shape[0])
-
-    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
-    A_rep = A.unsqueeze(2).repeat(1, 1, t.shape[0])
-
-    # Multiply exponentials with their amplitudes and sum all exponentials together
-    edcs = A_rep * (exponentials - exp_offset)
-    edc = torch.sum(edcs, 1)
-
-    # Add noise
-    noise = noiseLevel * torch.linspace(len(t), 1, len(t)).to(device)
-    edc = edc + noise
-    return edc
 
 
 def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, n_slope_estimation_mode):
@@ -541,7 +510,7 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
         loss_fn = nn.MSELoss(reduction='none')
 
     # Use predicted values to generate an EDC
-    edc_prediction = generate_synthetic_edc(t_vals_prediction, a_vals_prediction, n_vals_prediction, t, device)
+    edc_prediction = generate_synthetic_edc_torch(t_vals_prediction, a_vals_prediction, n_vals_prediction, t, device)
 
     # discard last 5 percent (i.e. the step which is already done for the true EDC and the test datasets prior to
     # saving them to the .mat files that are loaded in the beginning of this script
@@ -566,34 +535,96 @@ def edc_loss(t_vals_prediction, a_vals_prediction, n_exp_prediction, edcs_true, 
     return loss
 
 
-def decay_model(t_vals, a_vals, n_val, time_axis, compensate_uli=False):
-    # get decay rate: decay energy should have decreased by 60 db after T seconds
+def decay_model(t_vals, a_vals, n_val, time_axis, compensate_uli=True, backend='np', device='cpu'):
+    # t_vals, a_vals, n_vals can be either given as [n_vals, ] or as [n_batch or n_bands, n_vals]
+
+    # Avoid div by zero for T=0: Write arbitary number (1) into T values that are equal to zero (inactive slope),
+    # because their amplitude will be 0 as well (i.e. they don't contribute to the EDC)
     zero_t = (t_vals == 0)
-    assert (np.all(a_vals[zero_t] == 0)), "T values equal zero detected, for which A values are nonzero. This yields " \
-                                          "division by zero. For inactive slopes, set A to zero."
+    also_zero_a = (a_vals[zero_t] == 0)
+    if backend == 'torch':
+        also_zero_a = also_zero_a.numpy()
+    assert (np.all(also_zero_a)), "T values equal zero detected, for which A values are nonzero. This " \
+                                  "yields division by zero. For inactive slopes, set A to zero."
+    t_vals[t_vals == 0] = 1
+
+    if backend == 'np':
+        edc_model = generate_synthetic_edc_np(t_vals, a_vals, n_val, time_axis, compensate_uli=compensate_uli)
+        return edc_model
+    elif backend == 'torch':
+        edc_model = generate_synthetic_edc_torch(t_vals, a_vals, n_val, time_axis, device=device,
+                                                 compensate_uli=compensate_uli)
+
+        # Output should have the shape [n_bands, n_batches, n_samples]
+        edc_model = torch.unsqueeze(edc_model, 1)
+        return edc_model
+    else:
+        raise ValueError("Backend must be either 'np' or 'torch'.")
+
+
+def generate_synthetic_edc_torch(t_vals, a_vals, noise_level, time_axis, device='cpu', compensate_uli=True) -> torch.Tensor:
+    """ Generates an EDC from the estimated parameters."""
+    # Calculate decay rates, based on the requirement that after T60 seconds, the level must drop to -60dB
+    tau_vals = torch.log(torch.Tensor([1e6])).to(device) / t_vals
+
+    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
+    t_rep = time_axis.repeat(t_vals.shape[0], t_vals.shape[1], 1)
+    tau_vals_rep = tau_vals.unsqueeze(2).repeat(1, 1, time_axis.shape[0])
+
+    # Calculate exponentials from decay rates
+    time_vals = -t_rep * tau_vals_rep
+    exponentials = torch.exp(time_vals)
+
+    # account for limited upper limit of integration, see: Xiang, N., Goggans, P. M., Jasa, T. & Kleiner, M.
+    # "Evaluation of decay times in coupled spaces: Reliability analysis of Bayeisan decay time estimation."
+    # J Acoust Soc Am 117, 3707–3715 (2005).
+    if compensate_uli:
+        exp_offset = exponentials[:, :, -1].unsqueeze(2).repeat(1, 1, time_axis.shape[0])
+    else:
+        exp_offset = 0
+
+    # Repeat values such that end result will be (batch_size, n_slopes, sample_idx)
+    A_rep = a_vals.unsqueeze(2).repeat(1, 1, time_axis.shape[0])
+
+    # Multiply exponentials with their amplitudes and sum all exponentials together
+    edcs = A_rep * (exponentials - exp_offset)
+    edc = torch.sum(edcs, 1)
+
+    # Add noise
+    noise = noise_level * torch.linspace(len(time_axis), 1, len(time_axis)).to(device)
+    edc = edc + noise
+    return edc
+
+
+def generate_synthetic_edc_np(t_vals, a_vals, noise_level, time_axis, compensate_uli=True) -> np.ndarray:
+    value_dim = len(t_vals.shape) - 1
+
+    # get decay rate: decay energy should have decreased by 60 db after T seconds
+    zero_a = (a_vals == 0)
     tau_vals = np.log(1e6) / t_vals
+    tau_vals[zero_a] = 0
 
     # calculate decaying exponential terms
-    time_vals = - np.outer(time_axis, tau_vals)
+    time_vals = - np.tile(time_axis, (*t_vals.shape, 1)) * np.expand_dims(tau_vals, -1)
     exponentials = np.exp(time_vals)
 
-    # account for limited upper limit of integration, see: Xiang, N., Goggans, P. M., Jasa, T. & Kleiner, M. "Evaluation
-    # of decay times in coupled spaces: Reliability analysis of Bayeisan decay time estimation." J Acoust Soc Am 117,
-    # 3707–3715 (2005).
+    # account for limited upper limit of integration, see: Xiang, N., Goggans, P. M., Jasa, T. & Kleiner, M.
+    # "Evaluation of decay times in coupled spaces: Reliability analysis of Bayeisan decay time estimation."
+    # J Acoust Soc Am 117, 3707–3715 (2005).
     if compensate_uli:
-        exp_offset = exponentials[-1, :]
+        exp_offset = np.expand_dims(exponentials[..., -1], -1)
     else:
         exp_offset = 0
 
     # calculate final exponential terms
-    exponentials = (exponentials - exp_offset) * a_vals
+    exponentials = (exponentials - exp_offset) * np.expand_dims(a_vals, -1)
 
-    # zero exponentials where T=A=0 (they are NaN now because div by 0)
-    exponentials[:, zero_t] = 0
+    # zero exponentials where T=A=0 (they are NaN now because div by 0, and NaN*0=NaN in python)
+    exponentials[zero_a, :] = 0
 
     # calculate noise term
-    noise = n_val * np.linspace(len(time_axis), 1, len(time_axis))
-    noise = np.expand_dims(noise, 1)
+    noise = noise_level * np.linspace(len(time_axis), 1, len(time_axis))
+    noise = np.expand_dims(noise, value_dim)
 
-    edc_model = np.concatenate((exponentials, noise), 1)
+    edc_model = np.concatenate((exponentials, noise), value_dim)
     return edc_model

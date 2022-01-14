@@ -26,7 +26,7 @@ import os
 from pathlib import Path
 from typing import Union, List, Tuple
 
-from .core import PreprocessRIR, generate_synthetic_edc, _postprocess_parameters
+from .core import PreprocessRIR, _postprocess_parameters
 
 
 class DecayFitNetToolbox:
@@ -35,7 +35,6 @@ class DecayFitNetToolbox:
         self._version = '0.1.0'
         self.backend = backend
         self.device = device
-        self._output_size = 100  # Timesteps of downsampled RIRs
 
         self._sample_rate = sample_rate
 
@@ -48,13 +47,13 @@ class DecayFitNetToolbox:
 
         self._preprocess = PreprocessRIR(input_transform=self._input_transform,
                                          sample_rate=self._sample_rate,
-                                         output_size=self._output_size,
+                                         output_size=100,
                                          filter_frequencies=filter_frequencies)
 
     def __repr__(self):
         frmt = f'DecayFitNetToolbox {self._version}  \n'
         frmt += f'Input fs = {self._sample_rate} \n'
-        frmt += f'Output_size = {self._output_size} \n'
+        frmt += f'Output_size = {self.get_output_size()} \n'
 
         return frmt
 
@@ -67,6 +66,12 @@ class DecayFitNetToolbox:
 
     def get_filter_frequencies(self):
         return self._preprocess.get_filter_frequencies()
+
+    def set_output_size(self, output_size):
+        self._preprocess.output_size = output_size
+
+    def get_output_size(self):
+        return self._preprocess.output_size
 
     def preprocess(self, signal: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Preprocess an input signal to extract EDCs"""
@@ -115,51 +120,3 @@ class DecayFitNetToolbox:
                                                                            n_slopes_estimation_mode)
 
         return [t_prediction, a_prediction, n_prediction], norm_vals
-
-    def generate_EDCs(self,
-                      estimated_T: Union[torch.Tensor, List[float]],
-                      estimated_A: Union[torch.Tensor, List[float]],
-                      estimated_n: Union[torch.Tensor, List[float]],
-                      time_axis: Union[torch.Tensor, np.ndarray] = None) -> torch.Tensor:
-        """Generates an EDC from the estimated parameters.
-
-        estimated_T, estimated_A, n_exp_prediction should be [batch, dim]
-        Example:
-                >> fs = 10
-                >> l_edc = 10
-                >> t = np.linspace(0, l_edc * fs - 1, l_edc * fs) / fs
-                >> edc = estimate_EDC([1.3, 0.7], [0.7, 0.2], 1e-7, 0.1, t, "cpu")  # TODO
-        """
-        # TODO fix comment example
-
-        # Avoid inf/nan for T=0: Write arbitary number (1) into T values that are equal to zero (inactive slope),
-        # because their amplitude will be 0 as well (i.e. they don't contribute to the EDC)
-        estimated_T[estimated_T == 0] = 1
-
-        if time_axis is None:
-            fs = 10
-            l_edc = 10
-            time_axis = (torch.linspace(0, l_edc * fs - 1, round((1/0.95)*l_edc * fs)) / fs).to(self.device)
-
-        out = []
-        if len(estimated_T.shape) > 1:  # if there are more than 1 RIRs
-            for idx in range(estimated_T.shape[0]):
-                tmp = generate_synthetic_edc(T=estimated_T[idx:idx+1, :],
-                                             A=estimated_A[idx:idx+1, :],
-                                             noiseLevel=estimated_n[idx],
-                                             t=time_axis,
-                                             device=self.device)
-                # discard last 5 percent
-                tmp = tmp[:, 0:round(0.95*tmp.shape[1])]
-                out.append(tmp)
-            out = torch.stack(out, dim=0)  # Stack over batch
-        else:
-            out = generate_synthetic_edc(T=estimated_T,
-                                         A=estimated_A,
-                                         noiseLevel=estimated_n,
-                                         t=time_axis,
-                                         device=self.device)
-            # discard last 5 percent
-            out = out[:, 0:round(0.95*out.shape[1])]
-
-        return out
