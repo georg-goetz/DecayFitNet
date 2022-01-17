@@ -19,10 +19,10 @@ function [tVals, aVals, nVals] = postprocessDecayParameters(tVals, aVals, nVals,
     end
 
     % Sort T and A values
-    [tVals, sortIdxs] = sort(tVals, 1);
-    for bandIdx = 1:size(tVals, 2)
-        aThisBand = aVals(:, bandIdx);
-        aVals(:, bandIdx) = aThisBand(sortIdxs(:, bandIdx));
+    [tVals, sortIdxs] = sort(tVals, 2);
+    for bandIdx = 1:size(tVals, 1)
+        aThisBand = aVals(bandIdx, :);
+        aVals(bandIdx, :) = aThisBand(sortIdxs(bandIdx, :));
     end
 
     % 3) only in nSlope estimation mode: set nans to zero again

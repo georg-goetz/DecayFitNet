@@ -112,18 +112,18 @@ classdef BayesianDecayAnalysis < handle
  
             % in nSlope estimation mode: max number of slopes is hard-coded
             % in get method (3 is usually enough)
-            nBands = size(edcs, 2);
-            tVals = zeros(obj.maxNSlopes, nBands);
-            aVals = zeros(obj.maxNSlopes, nBands);
-            nVals = zeros(1, nBands);
+            nBands = size(edcs, 1);
+            tVals = zeros(nBands, obj.maxNSlopes);
+            aVals = zeros(nBands, obj.maxNSlopes);
+            nVals = zeros(nBands, 1);
             
             % go over all frequency bands
             for bandIdx=1:nBands
-                [tPrediction, aPrediction, nPrediction] = obj.estimation(edcs(:, bandIdx), timeAxis_ds);
-                nSlopesPrediction = size(tPrediction, 1);
-                tVals(1:nSlopesPrediction, bandIdx) = tPrediction;
-                aVals(1:nSlopesPrediction, bandIdx) = aPrediction;
-                nVals(1, bandIdx) = nPrediction;
+                [tPrediction, aPrediction, nPrediction] = obj.estimation(edcs(bandIdx, :), timeAxis_ds);
+                nSlopesPrediction = size(tPrediction, 2);
+                tVals(bandIdx, 1:nSlopesPrediction) = tPrediction;
+                aVals(bandIdx, 1:nSlopesPrediction) = aPrediction;
+                nVals(bandIdx, 1) = nPrediction;
             end
             
             % Postprocess parameters: scale adjustment, zero inactive
@@ -171,9 +171,9 @@ classdef BayesianDecayAnalysis < handle
             bestModelOrder = modelOrders(bestModelOrderIdx);
             bestModelParams = allMaxLikelihoodParams{bestModelOrderIdx};
 
-            tVals = obj.tSpace(bestModelParams(1:bestModelOrder)).';
-            aVals = obj.aSpace(bestModelParams(bestModelOrder+1:2*bestModelOrder)).';
-            nVal = obj.nSpace(bestModelParams(2*bestModelOrder+1:end)).';
+            tVals = obj.tSpace(bestModelParams(1:bestModelOrder));
+            aVals = obj.aSpace(bestModelParams(bestModelOrder+1:2*bestModelOrder));
+            nVal = obj.nSpace(bestModelParams(2*bestModelOrder+1:end));
         end
         
         function [testedParameters, likelihoods] = sliceSampling(obj, edc_db, modelOrder, timeAxis)
@@ -190,7 +190,7 @@ classdef BayesianDecayAnalysis < handle
             
             % evaluate likelihood for these parameters, and multiply with a
             % random number between 0...1 to determine a likelihood threshold
-            y0 = rand * obj.evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)).', obj.aSpace(x0(modelOrder+1:2*modelOrder)).', obj.nSpace(x0(2*modelOrder+1)), timeAxis);
+            y0 = rand * obj.evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)), obj.aSpace(x0(modelOrder+1:2*modelOrder)), obj.nSpace(x0(2*modelOrder+1)), timeAxis);
             
             % start to iterate
             for sampleIdx=1:obj.nIterations
@@ -208,7 +208,7 @@ classdef BayesianDecayAnalysis < handle
                 thisX0Left = x0;
                 while(thisX0Left(paramIdx)>1)
                     thisX0Left(paramIdx) = thisX0Left(paramIdx) - 1;
-                    thisY0Left = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Left(1:modelOrder)).', obj.aSpace(thisX0Left(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Left(2*modelOrder+1)), timeAxis);
+                    thisY0Left = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Left(1:modelOrder)), obj.aSpace(thisX0Left(modelOrder+1:2*modelOrder)), obj.nSpace(thisX0Left(2*modelOrder+1)), timeAxis);
 
                     if(thisY0Left < y0)
                         break;
@@ -220,7 +220,7 @@ classdef BayesianDecayAnalysis < handle
                 thisX0Right = x0;
                 while(thisX0Right(paramIdx)<obj.nPointsPerDim-1)
                     thisX0Right(paramIdx) = thisX0Right(paramIdx) + 1;
-                    thisY0Right = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Right(1:modelOrder)).', obj.aSpace(thisX0Right(modelOrder+1:2*modelOrder)).', obj.nSpace(thisX0Right(2*modelOrder+1)), timeAxis);
+                    thisY0Right = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Right(1:modelOrder)), obj.aSpace(thisX0Right(modelOrder+1:2*modelOrder)), obj.nSpace(thisX0Right(2*modelOrder+1)), timeAxis);
 
                     if(thisY0Right < y0)
                         break;
@@ -239,7 +239,7 @@ classdef BayesianDecayAnalysis < handle
                     x1(paramIdx) = randi(thisX0Right(paramIdx)-thisX0Left(paramIdx) + 1) + thisX0Left(paramIdx) - 1;
                     
                     % evaluate likelihood for drawn parameter
-                    y1 = obj.evaluateLikelihood(edc_db, obj.tSpace(x1(1:modelOrder)).', obj.aSpace(x1(modelOrder+1:2*modelOrder)).', obj.nSpace(x1(2*modelOrder+1)), timeAxis);
+                    y1 = obj.evaluateLikelihood(edc_db, obj.tSpace(x1(1:modelOrder)), obj.aSpace(x1(modelOrder+1:2*modelOrder)), obj.nSpace(x1(2*modelOrder+1)), timeAxis);
 
                     if(y1>y0)
                         % higher likelihood found, continue with next 
@@ -276,7 +276,7 @@ classdef BayesianDecayAnalysis < handle
 
             % Calculate model EDC
             modelEDC = decayModel(T, A, N, timeAxis, true); % compensateULI=true
-            modelEDC = sum(modelEDC, 2);
+            modelEDC = sum(modelEDC, 2).';
 
             % Convert to dB (true EDC is already db)
             modelEDC = 10*log10(modelEDC);

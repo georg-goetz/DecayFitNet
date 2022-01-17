@@ -99,7 +99,6 @@ class DecayFitNetToolbox:
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
-        # ort_outs = [torch.from_numpy(jj) for jj in ort_outs]
         t_prediction, a_prediction, n_exp_prediction, n_slopes_probabilities = ort_outs
 
         # Clamp noise to reasonable values to avoid numerical problems

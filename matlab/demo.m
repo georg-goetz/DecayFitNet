@@ -46,29 +46,29 @@ disp('==== DecayFitNet: Estimated N values (linear scale): ====')
 disp(nVals_decayFitNet)
 
 % Estimate true EDC
-trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true); % doBackwardsInt=true, analyseFullRIR=true, normalize=true
-timeAxis = linspace(0, (size(trueEDCs,1) - 1) / fs, size(trueEDCs,1) );
-estimatedEDCs_decayfitnet = generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis).';
+trueEDCs = rir2decay(rir, fs, [125, 250, 500, 1000, 2000, 4000], true, true, true).'; % doBackwardsInt=true, analyseFullRIR=true, normalize=true
+timeAxis = linspace(0, (size(trueEDCs, 2) - 1) / fs, size(trueEDCs, 2) );
+estimatedEDCs_decayfitnet = generateSyntheticEDCs(tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, timeAxis);
 
 f = figure;
 f.Position = [150, 200, 1600, 600];
 subplot(1, 2, 1);
 hold on;
-cmap = parula(size(trueEDCs, 2));
+cmap = parula(size(trueEDCs, 1));
 legendStr = {'Measured EDC, 125 Hz', 'DecayFitNet fit, 125 Hz', ...
     'Measured EDC, 250 Hz', 'DecayFitNet fit, 250 Hz',...
     'Measured EDC, 500 Hz', 'DecayFitNet fit, 500 Hz',...
     'Measured EDC, 1 kHz', 'DecayFitNet fit, 1 kHz',...
     'Measured EDC, 2 kHz', 'DecayFitNet fit, 2 kHz',...
     'Measured EDC, 4 kHz', 'DecayFitNet fit, 4 kHz'};
-L = round(0.95*size(trueEDCs, 1)); % discard last 5 percent
-allMSE = zeros(size(trueEDCs, 2), 1);
-for bandIdx=1:size(trueEDCs, 2)
-    plot(timeAxis(1:L), pow2db(trueEDCs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
-    plot(timeAxis(1:L), pow2db(estimatedEDCs_decayfitnet(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
+L = round(0.95*size(trueEDCs, 2)); % discard last 5 percent
+allMSE = zeros(size(trueEDCs, 1), 1);
+for bandIdx=1:size(trueEDCs, 1)
+    plot(timeAxis(1:L), pow2db(trueEDCs(bandIdx, 1:L)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
+    plot(timeAxis(1:L), pow2db(estimatedEDCs_decayfitnet(bandIdx, 1:L)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
     ylim([-60, 0]);
     
-    allMSE(bandIdx) = mseLoss(pow2db(trueEDCs(1:L, bandIdx)), pow2db(estimatedEDCs_decayfitnet(1:L, bandIdx)));
+    allMSE(bandIdx) = mseLoss(pow2db(trueEDCs(bandIdx, 1:L)), pow2db(estimatedEDCs_decayfitnet(bandIdx, 1:L)));
 end
 legend(legendStr, 'Location', 'EastOutside');
 title('DecayFitNet: Measured vs. estimated EDC fits');
@@ -87,25 +87,25 @@ disp(aVals_bayesian)
 disp('==== Bayesian analysis: Estimated N values (linear scale): ====') 
 disp(nVals_bayesian)
 
-estimatedEDCs_bayesian = generateSyntheticEDCs(tVals_bayesian, aVals_bayesian, nVals_bayesian, timeAxis).';
+estimatedEDCs_bayesian = generateSyntheticEDCs(tVals_bayesian, aVals_bayesian, nVals_bayesian, timeAxis);
 
 subplot(1, 2, 2);
 hold on;
-cmap = parula(size(trueEDCs, 2));
+cmap = parula(size(trueEDCs, 1));
 legendStr = {'Measured EDC, 125 Hz', 'Bayesian fit, 125 Hz', ...
     'Measured EDC, 250 Hz', 'Bayesian fit, 250 Hz',...
     'Measured EDC, 500 Hz', 'Bayesian fit, 500 Hz',...
     'Measured EDC, 1 kHz', 'Bayesian fit, 1 kHz',...
     'Measured EDC, 2 kHz', 'Bayesian fit, 2 kHz',...
     'Measured EDC, 4 kHz', 'Bayesian fit, 4 kHz'};
-L = round(0.95*size(trueEDCs, 1)); % discard last 5 percent
-allMSE = zeros(size(trueEDCs, 2), 1);
-for bandIdx=1:size(trueEDCs, 2)
-    plot(timeAxis(1:L), pow2db(trueEDCs(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
-    plot(timeAxis(1:L), pow2db(estimatedEDCs_bayesian(1:L, bandIdx)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
+L = round(0.95*size(trueEDCs, 2)); % discard last 5 percent
+allMSE = zeros(size(trueEDCs, 1), 1);
+for bandIdx=1:size(trueEDCs, 1)
+    plot(timeAxis(1:L), pow2db(trueEDCs(bandIdx, 1:L)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '-');
+    plot(timeAxis(1:L), pow2db(estimatedEDCs_bayesian(bandIdx, 1:L)), 'Color', cmap(bandIdx, :), 'LineWidth', 2, 'LineStyle', '--');
     ylim([-60, 0]);
     
-    allMSE(bandIdx) = mseLoss(pow2db(trueEDCs(1:L, bandIdx)), pow2db(estimatedEDCs_bayesian(1:L, bandIdx)));
+    allMSE(bandIdx) = mseLoss(pow2db(trueEDCs(bandIdx, 1:L)), pow2db(estimatedEDCs_bayesian(bandIdx, 1:L)));
 end
 legend(legendStr, 'Location', 'EastOutside');
 title('Bayesian decay analysis: Measured vs. estimated EDC fits');

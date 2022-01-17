@@ -85,11 +85,19 @@ classdef DecayFitNetToolbox < handle
         end
         
         function [tPrediction, aPrediction, nPrediction] = estimateParameters(obj, rir)
+            % Output is [nBands, nSlopes]
+            
             [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir);
             
             % Forward pass of the DecayFitNet
             net = str2func([obj.networkName, 'model']);
-            [tPrediction, aPrediction, nExpPrediction, nSlopesProbabilities] = net(edcs, obj.onnxModel, 'InputDataPermutation', [2,1]);
+            [tPrediction, aPrediction, nExpPrediction, nSlopesProbabilities] = net(edcs, obj.onnxModel);
+            
+            % Transpose results to make them [batchSize, nSlopes]
+            tPrediction = tPrediction.';
+            aPrediction = aPrediction.';
+            nExpPrediction = nExpPrediction.';
+            nSlopesProbabilities = nSlopesProbabilities.';
             
             % Clamp noise to reasonable values to avoid numerical problems
             nExpPrediction = min(max(nExpPrediction, -32), 32);
@@ -100,9 +108,9 @@ classdef DecayFitNetToolbox < handle
             % In nSlope inference mode: Get a binary mask to only use the number of slopes that were predicted, zero others
             nSlopeEstimationMode = (obj.nSlopes == 0);
             if nSlopeEstimationMode
-                [~, nSlopesPrediction] = max(nSlopesProbabilities, [], 1);
-                tmp = repmat(linspace(1,3,3), [size(nSlopesPrediction,2), 1])';
-                mask = tmp <= repmat(nSlopesPrediction, [3,1]);
+                [~, nSlopesPrediction] = max(nSlopesProbabilities, [], 2);
+                tmp = repmat(linspace(1,3,3), [length(nSlopesPrediction), 1]);
+                mask = tmp <= repmat(nSlopesPrediction, [1, 3]);
                 aPrediction(~mask) = 0;
             end
             

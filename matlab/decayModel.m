@@ -10,7 +10,7 @@ function edcModel = decayModel(T, A, N, timeAxis, compensateULI)
     tauVals = log(1e6) ./ T; 
     
     % calculate decaying exponential terms
-    timeVals = -timeAxis * tauVals.';
+    timeVals = -timeAxis.' * tauVals;
     exponentials = exp(timeVals);
     
     % account for limited upper limit of integration, see:
@@ -24,7 +24,7 @@ function edcModel = decayModel(T, A, N, timeAxis, compensateULI)
     end
     
     % calculate final exponential terms
-    exponentials = (exponentials - expOffset) .* A.';
+    exponentials = (exponentials - expOffset) .* A;
     
     % zero exponentials where T=A=0 (they are NaN now because div by 0)
     exponentials(:, zeroT) = 0;
