@@ -39,3 +39,11 @@ matlab/DecayFitNet_3slopes_offset_model.mat
 python/training_runs/DecayFitNet/
 
 *.0
+
+python/fits_decayfitnet_motus_slim.mat
+
+python/fits_decayfitnet_roomtransition_slim.mat
+
+python/mse_decayfitnet_motus_slim.mat
+
+python/mse_decayfitnet_roomtransition_slim.mat
