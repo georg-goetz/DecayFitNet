@@ -225,10 +225,10 @@ def main():
 
             scheduler.step()
 
-        utils.save_model(net, args.model_filename + '.pth')
+        utils.save_model(net, '../model/' + args.model_filename + '.pth')
 
     else:
-        utils.load_model(net, args.model_filename + '.pth', device)
+        utils.load_model(net, '../model/' + args.model_filename + '.pth', device)
 
         test(args, net, device, testloader, tb_writer, 1111, input_transform)
 
