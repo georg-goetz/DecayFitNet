@@ -35,3 +35,7 @@ matlab/DecayFitNet_2slopes_offset_model.mat
 matlab/DecayFitNet_3slopes_offset_model.m
 
 matlab/DecayFitNet_3slopes_offset_model.mat
+
+python/training_runs/DecayFitNet/
+
+*.0

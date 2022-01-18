@@ -38,13 +38,15 @@ def train(args, net, device, trainloader, optimizer, epoch, tb_writer):
         # First, loss on n slope prediction
         n_slope_loss = classification_loss_fn(n_slopes_probabilities, n_slopes.squeeze())
 
-        # Postprocess estimated parameters
-        t_prediction, a_prediction, n_prediction, __ = core.postprocess_parameters(t_prediction, a_prediction,
-                                                                                   n_prediction, n_slopes_probabilities,
-                                                                                   device, sort_values=False)
+        # Only use the number of slopes that were predicted, zero others
+        _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
+        n_slopes_prediction += 1  # because python starts at 0
+        tmp = torch.linspace(1, args.n_slopes_max, args.n_slopes_max).repeat(n_slopes_prediction.shape[0], 1).to(device)
+        mask = tmp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, args.n_slopes_max))
+        a_prediction[~mask] = 0
 
         # Calculate EDC Loss
-        edc_loss_val = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device)
+        edc_loss_mae = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device)
 
         # Calculate noise loss
         if args.exclude_noiseloss:
@@ -55,7 +57,7 @@ def train(args, net, device, trainloader, optimizer, epoch, tb_writer):
             noise_loss = maeloss(n_vals_true_db, n_vals_prediction_db)
 
         # Add up losses
-        total_loss = n_slope_loss + edc_loss_val + noise_loss
+        total_loss = n_slope_loss + edc_loss_mae + noise_loss
 
         # Do optimizer step
         optimizer.zero_grad()
@@ -64,26 +66,26 @@ def train(args, net, device, trainloader, optimizer, epoch, tb_writer):
 
         n_already_analyzed += edcs.shape[0]
         if batch_idx % args.log_interval == 0:
-            edc_loss_val_db = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device, training_flag=False)
+            edc_loss_mse = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device, training_flag=False)
 
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tTotal Loss: {:.3f}, N Slope Loss: {:.3f}, Noise Loss: {:.3f}, '
-                  'EDC Loss (scale): {:.3f}, EDC Loss (dB): {:.3f}'.format(epoch, n_already_analyzed,
-                                                                           len(trainloader.dataset),
-                                                                           100. * n_already_analyzed / len(
+                  'EDC Loss (MAE, dB): {:.3f}, MSE (dB): {:.3f}'.format(epoch, n_already_analyzed,
+                                                                        len(trainloader.dataset),
+                                                                        100. * n_already_analyzed / len(
                                                                                trainloader.dataset),
-                                                                           total_loss, n_slope_loss, noise_loss,
-                                                                           edc_loss_val, edc_loss_val_db))
+                                                                        total_loss, n_slope_loss, noise_loss,
+                                                                        edc_loss_mae, edc_loss_mse))
             tb_writer.add_scalar('Loss/Total_train_step', total_loss, (epoch - 1) * len(trainloader) + batch_idx)
             tb_writer.add_scalar('Loss/N_slope_train_step', n_slope_loss, (epoch - 1) * len(trainloader) + batch_idx)
             tb_writer.add_scalar('Loss/Noise_train_step', noise_loss, (epoch - 1) * len(trainloader) + batch_idx)
-            tb_writer.add_scalar('Loss/EDC_train_step', edc_loss_val, (epoch - 1) * len(trainloader) + batch_idx)
-            tb_writer.add_scalar('Loss/EDC_dB_train_step', edc_loss_val_db, (epoch - 1) * len(trainloader) + batch_idx)
+            tb_writer.add_scalar('Loss/MAE_step', edc_loss_mae, (epoch - 1) * len(trainloader) + batch_idx)
+            tb_writer.add_scalar('Loss/MSE_step', edc_loss_mse, (epoch - 1) * len(trainloader) + batch_idx)
             tb_writer.flush()
 
 
-def test(net, device, testloader, tb_writer, epoch, input_transform, testset_name='summer830'):
+def test(args, net, device, testloader, tb_writer, epoch, input_transform):
     net.eval()
-    print('=== Test: ' + testset_name + ' ===')
+    print('=== Test: Motus ===')
 
     with torch.no_grad():
         n_already_analyzed = 0
@@ -102,11 +104,12 @@ def test(net, device, testloader, tb_writer, epoch, input_transform, testset_nam
             # Prediction
             t_prediction, a_prediction, n_prediction, n_slopes_probabilities = net(edcs_normalized)
 
-            # Postprocess estimated parameters
-            t_prediction, a_prediction, n_prediction, __ = core.postprocess_parameters(t_prediction, a_prediction,
-                                                                                       n_prediction,
-                                                                                       n_slopes_probabilities,
-                                                                                       device, sort_values=False)
+            # Only use the number of slopes that were predicted, zero others
+            _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
+            n_slopes_prediction += 1  # because python starts at 0
+            tmp = torch.linspace(1, args.n_slopes_max, args.n_slopes_max).repeat(n_slopes_prediction.shape[0], 1).to(device)
+            mask = tmp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, args.n_slopes_max))
+            a_prediction[~mask] = 0
 
             # Calculate EDC Loss
             edc_loss_val = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device, training_flag=False)
@@ -116,14 +119,13 @@ def test(net, device, testloader, tb_writer, epoch, input_transform, testset_nam
             print('Test Epoch: {} [{}/{} ({:.0f}%)]\t EDC Loss (dB): {:.3f}'.format(
                 epoch, n_already_analyzed, len(testloader.dataset),
                 100. * n_already_analyzed / len(testloader.dataset), edc_loss_val))
-            tb_writer.add_scalar('Loss/EDC_test_step_' + testset_name, edc_loss_val,
-                                 (epoch - 1) * len(testloader) + batch_idx)
+            tb_writer.add_scalar('Loss/EDC_test_step_Motus', edc_loss_val, (epoch - 1) * len(testloader) + batch_idx)
             tb_writer.flush()
 
         print('Test Epoch: {} [{}/{} ({:.0f}%)]\t === Total EDC Loss (dB): {:.3f} ==='.format(
             epoch, n_already_analyzed, len(testloader.dataset),
             100. * n_already_analyzed / len(testloader.dataset), total_test_loss))
-        tb_writer.add_scalar('Loss/EDC_test_epoch_' + testset_name, total_test_loss, epoch)
+        tb_writer.add_scalar('Loss/EDC_test_epoch_Motus', total_test_loss, epoch)
         tb_writer.flush()
 
     return total_test_loss
@@ -131,14 +133,12 @@ def test(net, device, testloader, tb_writer, epoch, input_transform, testset_nam
 
 def main():
     # Argument parser
-    parser = argparse.ArgumentParser(description="Neural network to predict exponential parameters from EDCs")
-    parser.add_argument('--triton-flag', action='store_true', default=False,
-                        help='has to be true if script is run on triton cluster')
-    parser.add_argument('--units-per-layer', type=int, default=1500, metavar='N',
-                        help='units per layer in the neural network (default: 1500)')
+    parser = argparse.ArgumentParser(description="Neural network to predict decay parameters from EDCs")
+    parser.add_argument('--units-per-layer', type=int, default=400, metavar='N',
+                        help='units per layer in the neural network (default: 400)')
     parser.add_argument('--n-layers', type=int, default=3, metavar='N_layer',
                         help='number of layers in the neural network (default: 3)')
-    parser.add_argument('--n-filters', type=int, default=128, metavar='N_filt',
+    parser.add_argument('--n-filters', type=int, default=64, metavar='N_filt',
                         help='number of filters in the conv neural network (default: 128)')
     parser.add_argument('--relu-slope', type=float, default=0.0, metavar='relu',
                         help='negative relu slope (default: 0.0)')
@@ -153,24 +153,22 @@ def main():
                         help='has to be true if the noise loss should be excluded')
     parser.add_argument('--model-filename', default='DecayFitNet',
                         help='filename for saving and loading net (default: DecayFitNet')
+    parser.add_argument('--n-slopes-max', type=int, default=3, metavar='smax',
+                        help='maximum number of slopes to consider (default: 3)')
     parser.add_argument('--batch-size', type=int, default=2048, metavar='bs',
                         help='input batch size for training (default: 2048)')
     parser.add_argument('--test-batch-size', type=int, default=2048, metavar='bs_t',
                         help='input batch size for testing (default: 2048)')
-    parser.add_argument('--n-slopes-min', type=int, default=1, metavar='smin',
-                        help='minimum number of slopes to consider (default: 1)')
-    parser.add_argument('--n-slopes-max', type=int, default=3, metavar='smax',
-                        help='maximum number of slopes to consider (default: 3)')
-    parser.add_argument('--edcs-per-slope', type=int, default=10000, metavar='S',
-                        help='number of edcs per slope in the dataset (default: 10000)')
-    parser.add_argument('--epochs', type=int, default=100, metavar='E',
-                        help='number of epochs to train (default: 100)')
-    parser.add_argument('--lr', type=float, default=5e-3, metavar='LR',
-                        help='learning rate (default: 5e-3)')
-    parser.add_argument('--lr-schedule', type=int, default=5, metavar='LRsch',
-                        help='learning rate is reduced with every epoch, restart after lr-schedule epochs (default: 5)')
-    parser.add_argument('--weight-decay', type=float, default=1e-3, metavar='WD',
-                        help='weight decay of Adam Optimizer (default: 1e-3)')
+    parser.add_argument('--edcs-per-slope', type=int, default=50000, metavar='S',
+                        help='number of edcs per slope in the dataset (default: 50000)')
+    parser.add_argument('--epochs', type=int, default=200, metavar='E',
+                        help='number of epochs to train (default: 200)')
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
+                        help='learning rate (default: 1e-3)')
+    parser.add_argument('--lr-schedule', type=int, default=40, metavar='LRsch',
+                        help='learning rate is reduced with every epoch, restart after lr-schedule epochs (default: 40)')
+    parser.add_argument('--weight-decay', type=float, default=3e-4, metavar='WD',
+                        help='weight decay of Adam Optimizer (default: 3e-4)')
     parser.add_argument('--use-cuda', action='store_true', default=False,
                         help='enables CUDA training')
     parser.add_argument('--seed', type=int, default=42, metavar='SEED',
@@ -197,21 +195,23 @@ def main():
     kwargs = {'num_workers': 0, 'pin_memory': True} if use_cuda else {}
 
     # TensorBoard writer
-    tb_writer = SummaryWriter(log_dir='runs/' + args.model_filename)
+    tb_writer = SummaryWriter(log_dir='training_runs/' + args.model_filename)
 
     print('Reading dataset.')
-    dataset_decays = core.DecayDataset(args.n_slopes_min, args.n_slopes_max, args.edcs_per_slope, args.triton_flag)
+    dataset_synthdecays = core.DecayDataset(n_slopes_max=args.n_slopes_max, edcs_per_slope=args.edcs_per_slope,
+                                            testset_flag=False)
 
-    input_transform = {'edcs_db_normfactor': dataset_decays.edcs_db_normfactor}
+    input_transform = {'edcs_db_normfactor': dataset_synthdecays.edcs_db_normfactor}
 
-    dataset_summer830 = core.DecayDataset(triton_flag=args.triton_flag, testset_flag=True, testset_name='summer830')
+    dataset_motus = core.DecayDataset(testset_flag=True)
 
-    trainloader = DataLoader(dataset_decays, batch_size=args.batch_size, shuffle=True, **kwargs)
-    testloader = DataLoader(dataset_summer830, batch_size=args.test_batch_size, shuffle=True, **kwargs)
+    trainloader = DataLoader(dataset_synthdecays, batch_size=args.batch_size, shuffle=True, **kwargs)
+    testloader = DataLoader(dataset_motus, batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
     # Create network
-    net = core.DecayFitNetLinear(args.n_slopes_max, args.units_per_layer, args.n_filters, args.n_layers,
-                                 args.relu_slope, args.dropout, args.reduction_per_layer, device).to(device)
+    net = core.DecayFitNet(n_slopes=args.n_slopes_max, n_max_units=args.units_per_layer, n_filters=args.n_filters,
+                           n_layers=args.n_layers, relu_slope=args.relu_slope, dropout=args.dropout,
+                           reduction_per_layer=args.reduction_per_layer, device=device).to(device)
     net = net.float()
 
     if not args.skip_training:
@@ -221,7 +221,7 @@ def main():
         # Training loop
         for epoch in range(1, args.epochs + 1):
             train(args, net, device, trainloader, optimizer, epoch, tb_writer)
-            test(net, device, testloader, tb_writer, epoch, input_transform, testset_name='summer830')
+            test(args, net, device, testloader, tb_writer, epoch, input_transform)
 
             scheduler.step()
 
@@ -230,7 +230,7 @@ def main():
     else:
         utils.load_model(net, args.model_filename + '.pth', device)
 
-        test(net, device, testloader, tb_writer, 1111, input_transform, testset_name='summer830')
+        test(args, net, device, testloader, tb_writer, 1111, input_transform)
 
 
 if __name__ == '__main__':
