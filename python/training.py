@@ -13,8 +13,9 @@ import toolbox.core as core
 import toolbox.utils as utils
 
 
-def train(args, net, device, trainloader, optimizer, epoch, tb_writer):
+def train(args, net, trainloader, optimizer, epoch, tb_writer):
     net.train()
+    device = net.device
 
     maeloss = nn.L1Loss()
     classification_loss_fn = nn.CrossEntropyLoss()
@@ -35,15 +36,19 @@ def train(args, net, device, trainloader, optimizer, epoch, tb_writer):
         '''
         Calculate Losses
         '''
-        # First, loss on n slope prediction
-        n_slope_loss = classification_loss_fn(n_slopes_probabilities, n_slopes.squeeze())
+        # Only do these steps if n slopes should be predicted by network
+        if not net.exactly_n_slopes_mode:
+            # First, loss on n slope prediction
+            n_slope_loss = classification_loss_fn(n_slopes_probabilities, n_slopes.squeeze())
 
-        # Only use the number of slopes that were predicted, zero others
-        _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
-        n_slopes_prediction += 1  # because python starts at 0
-        tmp = torch.linspace(1, args.n_slopes_max, args.n_slopes_max).repeat(n_slopes_prediction.shape[0], 1).to(device)
-        mask = tmp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, args.n_slopes_max))
-        a_prediction[~mask] = 0
+            # Only use the number of slopes that were predicted, zero others
+            _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
+            n_slopes_prediction += 1  # because python starts at 0
+            tmp = torch.linspace(1, args.n_slopes_max, args.n_slopes_max).repeat(n_slopes_prediction.shape[0], 1).to(device)
+            mask = tmp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, args.n_slopes_max))
+            a_prediction[~mask] = 0
+        else:
+            n_slope_loss = 0
 
         # Calculate EDC Loss
         edc_loss_mae = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device)
@@ -83,8 +88,9 @@ def train(args, net, device, trainloader, optimizer, epoch, tb_writer):
             tb_writer.flush()
 
 
-def test(args, net, device, testloader, tb_writer, epoch, input_transform):
+def test(args, net, testloader, epoch, input_transform, tb_writer):
     net.eval()
+    device = net.device
     print('=== Test: Motus ===')
 
     with torch.no_grad():
@@ -104,12 +110,13 @@ def test(args, net, device, testloader, tb_writer, epoch, input_transform):
             # Prediction
             t_prediction, a_prediction, n_prediction, n_slopes_probabilities = net(edcs_normalized)
 
-            # Only use the number of slopes that were predicted, zero others
-            _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
-            n_slopes_prediction += 1  # because python starts at 0
-            tmp = torch.linspace(1, args.n_slopes_max, args.n_slopes_max).repeat(n_slopes_prediction.shape[0], 1).to(device)
-            mask = tmp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, args.n_slopes_max))
-            a_prediction[~mask] = 0
+            # If n slopes should be predicted by network: Only use the number of slopes that were predicted, zero others
+            if not net.exactly_n_slopes_mode:
+                _, n_slopes_prediction = torch.max(n_slopes_probabilities, 1)
+                n_slopes_prediction += 1  # because python starts at 0
+                tmp = torch.linspace(1, args.n_slopes_max, args.n_slopes_max).repeat(n_slopes_prediction.shape[0], 1).to(device)
+                mask = tmp.less_equal(n_slopes_prediction.unsqueeze(1).repeat(1, args.n_slopes_max))
+                a_prediction[~mask] = 0
 
             # Calculate EDC Loss
             edc_loss_val = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device, training_flag=False)
@@ -171,6 +178,9 @@ def main():
                         help='weight decay of Adam Optimizer (default: 3e-4)')
     parser.add_argument('--use-cuda', action='store_true', default=False,
                         help='enables CUDA training')
+    parser.add_argument('--exactly-n-slopes-mode', action='store_true', default=False,
+                        help='should be true when exactly n slopes should be predicted, i.e., no model order '
+                             'prediction is desired')
     parser.add_argument('--seed', type=int, default=42, metavar='SEED',
                         help='random seed (default: 42)')
     parser.add_argument('--log-interval', type=int, default=1, metavar='LOGINT',
@@ -199,11 +209,11 @@ def main():
 
     print('Reading dataset.')
     dataset_synthdecays = core.DecayDataset(n_slopes_max=args.n_slopes_max, edcs_per_slope=args.edcs_per_slope,
-                                            testset_flag=False)
+                                            testset_flag=False, exactly_n_slopes_mode=args.exactly_n_slopes_mode)
 
     input_transform = {'edcs_db_normfactor': dataset_synthdecays.edcs_db_normfactor}
 
-    dataset_motus = core.DecayDataset(testset_flag=True)
+    dataset_motus = core.DecayDataset(testset_flag=True, exactly_n_slopes_mode=args.exactly_n_slopes_mode)
 
     trainloader = DataLoader(dataset_synthdecays, batch_size=args.batch_size, shuffle=True, **kwargs)
     testloader = DataLoader(dataset_motus, batch_size=args.test_batch_size, shuffle=True, **kwargs)
@@ -211,7 +221,8 @@ def main():
     # Create network
     net = core.DecayFitNet(n_slopes=args.n_slopes_max, n_max_units=args.units_per_layer, n_filters=args.n_filters,
                            n_layers=args.n_layers, relu_slope=args.relu_slope, dropout=args.dropout,
-                           reduction_per_layer=args.reduction_per_layer, device=device).to(device)
+                           reduction_per_layer=args.reduction_per_layer, device=device,
+                           exactly_n_slopes_mode=args.exactly_n_slopes_mode).to(device)
     net = net.float()
 
     if not args.skip_training:
@@ -220,8 +231,8 @@ def main():
 
         # Training loop
         for epoch in range(1, args.epochs + 1):
-            train(args, net, device, trainloader, optimizer, epoch, tb_writer)
-            test(args, net, device, testloader, tb_writer, epoch, input_transform)
+            train(args, net, trainloader, optimizer, epoch, tb_writer)
+            test(args, net, testloader, epoch, input_transform, tb_writer)
 
             scheduler.step()
 
@@ -230,7 +241,7 @@ def main():
     else:
         utils.load_model(net, '../model/' + args.model_filename + '.pth', device)
 
-        test(args, net, device, testloader, tb_writer, 1111, input_transform)
+        test(args, net, testloader, 1111, input_transform, tb_writer)
 
 
 if __name__ == '__main__':
