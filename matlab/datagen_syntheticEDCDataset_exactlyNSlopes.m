@@ -96,7 +96,7 @@ end
 %% Save all
 assert(all(edcs > 0, 'all'), 'Negative EDC values.');
 
-wrkDir = '../data';
+wrkDir = fullfile('..', 'data', 'synthEDCs');
 save(fullfile(wrkDir, sprintf('edcs_100_%dslopes.mat', nSlopes)), 'edcs', '-v7.3')
 save(fullfile(wrkDir, sprintf('noiseLevels_100_%dslopes.mat', nSlopes)), 'noiseLevels', '-v7.3')
 end
