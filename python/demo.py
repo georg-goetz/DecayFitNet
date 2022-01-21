@@ -15,11 +15,11 @@ from toolbox.BayesianDecayAnalysis import BayesianDecayAnalysis
 
 # ===============================================================================
 # Parameters
-audio_path = os.path.join(Path(__file__).parent.parent.resolve(), 'model')
+audio_path = os.path.join(Path(__file__).parent.parent.resolve(), 'data', 'exampleRIRs')
 rir_fname = '0001_1_sh_rirs.wav'  # First measurement
 fadeout_length = 0  # in seconds
 
-n_slopes = 0
+n_slopes = 0  # 0 = number of active slopes is determined by network or bayesian analysis (between 1 and 3)
 
 filter_frequencies = [125, 250, 500, 1000, 2000, 4000]
 
@@ -56,7 +56,7 @@ true_edc = true_edc.permute(1, 0, 2)
 # Analyze with DecayFitNet
 
 # Prepare the model
-decayfitnet = DecayFitNetToolbox(sample_rate=fs, filter_frequencies=filter_frequencies)
+decayfitnet = DecayFitNetToolbox(n_slopes=n_slopes, sample_rate=fs, filter_frequencies=filter_frequencies)
 
 # Process
 estimated_parameters_decayfitnet, norm_vals_decayfitnet = decayfitnet.estimate_parameters(rir)

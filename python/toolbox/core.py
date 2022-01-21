@@ -6,7 +6,7 @@ import scipy.stats
 import scipy.signal
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Tuple, TypeVar, Callable, Any, List, Dict
+from typing import Tuple, List, Dict
 import h5py
 
 
@@ -445,7 +445,7 @@ class PreprocessRIR(nn.Module):
         return out, norm_factors.squeeze(2)
 
 
-def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, n_slope_estimation_mode):
+def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, exactly_n_slopes_mode):
     # Process the estimated t, a, and n parameters
 
     # Adjust for downsampling
@@ -455,7 +455,7 @@ def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, n_slop
     t_vals = t_vals / scale_adjust_factors['t_adjust']  # factors are 1 for Bayesian
 
     # In nSlope estimation mode: get a binary mask to only use the number of slopes that were predicted, zero others
-    if n_slope_estimation_mode:
+    if not exactly_n_slopes_mode:
         mask = (a_vals == 0)
 
         # Assign NaN instead of zero for now, to sort inactive slopes to the end
@@ -469,7 +469,7 @@ def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, n_slop
         a_vals[band_idx, :] = a_vals[band_idx, sort_idxs[band_idx, :]]
 
     # In nSlope estimation mode: set nans to zero again
-    if n_slope_estimation_mode:
+    if not exactly_n_slopes_mode:
         t_vals[np.isnan(t_vals)] = 0
         a_vals[np.isnan(a_vals)] = 0
 

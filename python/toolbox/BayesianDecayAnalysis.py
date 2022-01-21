@@ -1,10 +1,8 @@
-from typing import List
-
 import numpy as np
 import copy
 import scipy.signal
 import scipy.special
-from typing import Union, List, Tuple
+from typing import List, Tuple
 
 from .core import PreprocessRIR, _postprocess_parameters, decay_model
 
@@ -163,9 +161,9 @@ class BayesianDecayAnalysis:
             n_vals[band_idx, 0] = n_prediction
 
         # Postprocess parameters
-        n_slope_estimation_mode = (self._n_slopes == 0)
+        exactly_n_slopes_mode = (self._n_slopes != 0)
         t_vals, a_vals, n_vals = _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors,
-                                                         n_slope_estimation_mode)
+                                                         exactly_n_slopes_mode)
 
         return [t_vals, a_vals, n_vals], norm_vals
 
@@ -177,7 +175,7 @@ class BayesianDecayAnalysis:
         if self._n_slopes == 0:
             model_orders = [1, 2, 3]  # estimate number of slopes according to BIC
         else:
-            model_orders = self._n_slopes
+            model_orders = [self._n_slopes]
 
         all_max_likelihood_params = []
         all_bics = []

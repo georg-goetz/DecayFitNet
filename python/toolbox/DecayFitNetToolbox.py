@@ -1,22 +1,3 @@
-# Pre processing:
-# 	Load impulse  or path to impulse
-# 	Filter bank
-# 	Backwards integration
-# 	Resampling to 100 samples
-# 	Ampltiude2DB
-# 	Normalization (wtih training data parameters)
-#
-# Reshaping freq bands to batch size.
-#
-# Output:
-# 	1 fitting per octave band ( 3 t , 3 a, 1 noise)
-# 	Reshape output if multiple freq bands
-# 	MSE of EDC fit (generate_synthetic_edc() net --> EDC)
-#
-# Plots:
-# 	Input EDCs
-# 	Output EDCs
-
 import torch
 import numpy as np
 import pickle
@@ -24,26 +5,35 @@ import onnx
 import onnxruntime
 import os
 from pathlib import Path
-from typing import Union, List, Tuple
+from typing import List, Tuple
 
 from .core import PreprocessRIR, _postprocess_parameters
 
 
 class DecayFitNetToolbox:
-    def __init__(self, sample_rate: int = 48000, backend: str = 'pytorch', device: torch.device = torch.device('cpu'),
-                 filter_frequencies: List = None):
+    def __init__(self, n_slopes: int = 0, sample_rate: int = 48000, filter_frequencies: List = None,
+                 device: torch.device = torch.device('cpu')):
         self._version = '0.1.0'
-        self.backend = backend
         self.device = device
 
+        self._n_slopes = n_slopes
         self._sample_rate = sample_rate
 
-        PATH_ONNX = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
+        # setup path
+        path_onnx = Path.joinpath(Path(__file__).parent.parent.parent, 'model')
 
-        self._onnx_model = onnx.load(os.path.join(PATH_ONNX, "DecayFitNet_v10.onnx"))
+        # load net and start onnx session
+        if n_slopes == 0:
+            n_slope_str = ''
+        else:
+            n_slope_str = f'_{n_slopes}slopes'
+        model_name = f'DecayFitNet{n_slope_str}_v10.onnx'
+        self._onnx_model = onnx.load(os.path.join(path_onnx, model_name))
         onnx.checker.check_model(self._onnx_model)
-        self._session = onnxruntime.InferenceSession(os.path.join(PATH_ONNX, "DecayFitNet_v10.onnx"))
-        self._input_transform = pickle.load(open(os.path.join(PATH_ONNX, 'input_transform.pkl'), 'rb'))
+        self._session = onnxruntime.InferenceSession(os.path.join(path_onnx, model_name))
+
+        # Load input transform
+        self._input_transform = pickle.load(open(os.path.join(path_onnx, f'input_transform{n_slope_str}.pkl'), 'rb'))
 
         self._preprocess = PreprocessRIR(input_transform=self._input_transform,
                                          sample_rate=self._sample_rate,
@@ -60,6 +50,17 @@ class DecayFitNetToolbox:
     @staticmethod
     def _to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+    def set_n_slopes(self, n_slopes):
+        assert n_slopes <= 3, 'Maximum number of supported slopes is 3.'
+        self._n_slopes = n_slopes
+
+    def get_max_n_slopes(self):
+        if self._n_slopes == 0:
+            max_n_slopes = 3
+        else:
+            max_n_slopes = self._n_slopes
+        return max_n_slopes
 
     def set_filter_frequencies(self, filter_frequencies):
         self._preprocess.set_filter_frequencies(filter_frequencies)
@@ -99,23 +100,25 @@ class DecayFitNetToolbox:
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
+
         t_prediction, a_prediction, n_exp_prediction, n_slopes_probabilities = ort_outs
+
+        # If number of active slopes is estimated by network: Get a binary mask to only use the number of slopes
+        # that were predicted, zero others
+        exactly_n_slopes_mode = (self._n_slopes != 0)
+        if not exactly_n_slopes_mode:
+            n_slopes_prediction = np.argmax(n_slopes_probabilities, 1)
+            n_slopes_prediction += 1  # because python starts at 0
+            temp = np.tile(np.linspace(1, 3, 3, dtype=np.uint8), (n_slopes_prediction.shape[0], 1))
+            mask = (np.tile(np.expand_dims(n_slopes_prediction, 1), (1, 3)) < temp)
+            a_prediction[mask] = 0
 
         # Clamp noise to reasonable values to avoid numerical problems
         n_exp_prediction = np.clip(n_exp_prediction, -32, 32)
         # Go from noise exponent to noise value
         n_prediction = np.power(10, n_exp_prediction)
 
-        # Get a binary mask to only use the number of slopes that were predicted, zero others
-        n_slopes_prediction = np.argmax(n_slopes_probabilities, 1)
-        n_slopes_prediction += 1  # because python starts at 0
-        temp = np.tile(np.linspace(1, 3, 3, dtype=np.uint8), (n_slopes_prediction.shape[0], 1))
-        mask = (np.tile(np.expand_dims(n_slopes_prediction, 1), (1, 3)) < temp)
-        a_prediction[mask] = 0
-
-        n_slopes_estimation_mode = True  # TODO: change this after nSlopes are part of python toolbox
         t_prediction, a_prediction, n_prediction = _postprocess_parameters(t_prediction, a_prediction, n_prediction,
-                                                                           scale_adjust_factors,
-                                                                           n_slopes_estimation_mode)
+                                                                           scale_adjust_factors, exactly_n_slopes_mode)
 
         return [t_prediction, a_prediction, n_prediction], norm_vals
