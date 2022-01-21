@@ -13,8 +13,8 @@ import toolbox.utils as utils
 UNITS_PER_LAYER = 400
 N_LAYERS = 3
 N_FILTER = 64
-N_SLOPES = 3
-EXACTLY_N_SLOPE_MODE = False
+N_SLOPES = 1
+EXACTLY_N_SLOPE_MODE = True
 
 
 def get_net():
@@ -57,7 +57,7 @@ def export_input_transform2matlab(protocol=2):
     """ Helper function to dump the input transform in a different pickle protocol.
         This is useful for reading in other platforms (e.g. Matlab)
         """
-    with open(os.path.join(path_onnx, 'input_transform{}.pkl'.format(n_slope_str)), 'rb') as f:
+    with open(os.path.join(path_onnx, f'input_transform{n_slope_str}.pkl'), 'rb') as f:
         data = pickle.load(f)
 
     with open(os.path.join(path_onnx, f'input_transform{n_slope_str}_p{protocol}.pkl'), 'wb') as f:
@@ -68,12 +68,12 @@ def export_input_transform2matlab(protocol=2):
 
 if __name__ == '__main__':
     if EXACTLY_N_SLOPE_MODE:
-        n_slope_str = '_{}slopes'.format(N_SLOPES)
+        n_slope_str = f'_{N_SLOPES}slopes'
     else:
         n_slope_str = ''
 
     # Path to weights and export directory
-    network_name = 'DecayFitNet{}.pth'.format(n_slope_str)
+    network_name = f'DecayFitNet{n_slope_str}.pth'
     path_onnx = Path.joinpath(Path(__file__).parent.parent, 'model')
 
     export_onnx(onnx_version=9)
@@ -81,6 +81,19 @@ if __name__ == '__main__':
     print('Finished exporting DecayFitNet to ONNX file.')
     export_input_transform2matlab(protocol=2)
     print('Finished exporting input transform file.')
+
+    if os.path.exists(Path.joinpath(path_onnx, f'DecayFitNet{n_slope_str}_model.m')) or \
+            os.path.exists(Path.joinpath(path_onnx, f'DecayFitNet{n_slope_str}_model.mat')):
+
+        answer = input('Matlab files of previous model were found. They must be deleted for the new network to work. '
+                       'Delete them? [y/n] \n')
+
+        if answer.lower() == 'y':
+            if os.path.exists(Path.joinpath(path_onnx, f'DecayFitNet{n_slope_str}_model.m')):
+                os.remove(Path.joinpath(path_onnx, f'DecayFitNet{n_slope_str}_model.m'))
+            if os.path.exists(Path.joinpath(path_onnx, f'DecayFitNet{n_slope_str}_model.mat')):
+                os.remove(Path.joinpath(path_onnx, f'DecayFitNet{n_slope_str}_model.mat'))
+
 
 
 

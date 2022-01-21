@@ -47,3 +47,19 @@ python/fits_decayfitnet_roomtransition_slim.mat
 python/mse_decayfitnet_motus_slim.mat
 
 python/mse_decayfitnet_roomtransition_slim.mat
+
+model/DecayFitNet_1slopes_model.m
+
+model/DecayFitNet_1slopes_model.mat
+
+model/DecayFitNet_2slopes_model.m
+
+model/DecayFitNet_2slopes_model.mat
+
+model/DecayFitNet_3slopes_model.m
+
+model/DecayFitNet_3slopes_model.mat
+
+model/DecayFitNet_model.m
+
+model/DecayFitNet_model.mat

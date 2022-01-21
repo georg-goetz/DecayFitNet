@@ -2,11 +2,11 @@ close all; clear variables; clc; lastwarn('');
 %% External dependencies
 
 %% Parameters
-audioPath = '../model';  %local path
+audioPath = '../data/exampleRIRs';  %local path
 rirFName = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
 
 fadeoutLength = 0;  % in secs
-nSlopes = 0; % 0 = estimate number of active slopes
+nSlopes = 2; % 0 = network estimates number of active slopes
 
 % Bayesian parameters
 parameterRanges.tRange = [0.1, 3.5];

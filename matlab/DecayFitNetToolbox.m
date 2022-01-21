@@ -32,19 +32,14 @@ classdef DecayFitNetToolbox < handle
             % Load onnx model
             [thisDir, ~, ~] = fileparts(mfilename('fullpath'));
             obj.onnxPath = fullfile(thisDir, '..', 'model');
+            addpath(obj.onnxPath);
             
             if obj.nSlopes == 0
                 % infer number of slopes with network
                 slopeMode = '';
-            elseif obj.nSlopes == 1
-                % fit exactly 1 slope plus noise
-                slopeMode = '1slopes_';
-            elseif obj.nSlopes == 2
-                % fit exactly 2 slopes plus noise
-                slopeMode = '2slopes_';
-            elseif obj.nSlopes == 3
-                % fit exactly 3 slopes plus noise
-                slopeMode = '3slopes_';
+            elseif obj.nSlopes == 1 || obj.nSlopes == 2 || obj.nSlopes == 3
+                % fit exactly n slopes plus noise
+                slopeMode = sprintf('%dslopes_', obj.nSlopes);
             else
                 error('Please specify a valid number of slopes to be predicted by the network (nSlopes=1,2,3 for 1,2,3 slopes plus noise, respectively, or nSlopes=0 to let the network infer the number of slopes [max 3 slopes]).');
             end
@@ -53,11 +48,11 @@ classdef DecayFitNetToolbox < handle
             % Load ONNX model:
             if exist([obj.networkName, 'model.mat'], 'file')
                 fprintf('Loading precompiled model %smodel.mat\n', obj.networkName)
-                obj.onnxModel = load([obj.networkName, 'model.mat']).tmp;
+                obj.onnxModel = load(fullfile(obj.onnxPath, [obj.networkName, 'model.mat'])).tmp;
             else
-                obj.onnxModel = importONNXFunction(fullfile(obj.onnxPath, [obj.networkName, 'v9.onnx']), [obj.networkName, 'model']);
+                obj.onnxModel = importONNXFunction(fullfile(obj.onnxPath, [obj.networkName, 'v9.onnx']), fullfile(obj.onnxPath, [obj.networkName, 'model']));
                 tmp = obj.onnxModel;
-                save([obj.networkName, 'model.mat'], 'tmp');
+                save(fullfile(obj.onnxPath, [obj.networkName, 'model.mat']), 'tmp');
             end
             [~, msgid] = lastwarn;
             if strcmp(msgid, 'MATLAB:load:cannotInstantiateLoadedVariable')
