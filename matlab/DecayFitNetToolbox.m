@@ -79,10 +79,10 @@ classdef DecayFitNetToolbox < handle
             filterFrequencies = obj.preprocessing.filterFrequencies;
         end
         
-        function [tPrediction, aPrediction, nPrediction] = estimateParameters(obj, rir)
+        function [tPrediction, aPrediction, nPrediction, normVals] = estimateParameters(obj, rir)
             % Output is [nBands, nSlopes]
             
-            [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir);
+            [edcs, ~, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir);
             
             % Forward pass of the DecayFitNet
             net = str2func([obj.networkName, 'model']);
@@ -109,6 +109,8 @@ classdef DecayFitNetToolbox < handle
                 aPrediction(~mask) = 0;
             end
             
+            % Postprocess parameters and also convert to original
+            % time-scale
             [tPrediction, aPrediction, nPrediction] = postprocessDecayParameters(tPrediction, aPrediction, nPrediction, scaleAdjustFactors, nSlopeEstimationMode);
         end
     end

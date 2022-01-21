@@ -37,7 +37,7 @@ fprintf('The impulse has %d timesteps at %d kHz sampling rate = %f seconds.\n', 
 
 %% Load model and estimate parameters
 net = DecayFitNetToolbox(nSlopes, fs);
-[tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet] = net.estimateParameters(rir);
+[tVals_decayfitnet, aVals_decayfitnet, nVals_decayFitNet, normVals_decayFitNet] = net.estimateParameters(rir);
 disp('==== DecayFitNet: Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(tVals_decayfitnet)
 disp('==== DecayFitNet: Estimated A values (linear scale, A=0 indicates an inactive slope): ====') 
@@ -78,7 +78,7 @@ fprintf('MSE between input EDC and estimated fit for different frequency bands:\
 
 %% Use Bayesian decay analysis with slice sampling
 bda = BayesianDecayAnalysis(nSlopes, fs, parameterRanges, nIterations);
-[tVals_bayesian, aVals_bayesian, nVals_bayesian] = bda.estimateParameters(rir);
+[tVals_bayesian, aVals_bayesian, nVals_bayesian, normVals_bayesian] = bda.estimateParameters(rir);
 
 disp('==== Bayesian analysis: Estimated T values (in seconds, T=0 indicates an inactive slope): ====') 
 disp(tVals_bayesian)
