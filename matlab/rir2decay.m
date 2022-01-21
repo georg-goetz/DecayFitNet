@@ -1,4 +1,4 @@
-function [decay, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, ignoreOnset, normalize)
+function [decayFBands, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, analyseFullRIR, normalize)
 % calculates energy decay curves in octave-bands from a room impulse response
 %
 % Inputs:
@@ -8,6 +8,8 @@ function [decay, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, ignoreOn
 %                   [numBands, 1]
 %   doBackwardsInt  - boolean that indicates whether decay should be
 %                   backwards integrated (Schroeder decay) or not
+%   analyseFullRIR  - if true: analyse RIR as is, if false: cut away
+%                   everything in the RIR before the onset/direct sound
 %   normalize       - normalize the decay to a maximum of 1. NOTE: for the
 %                   Schroeder decay, this means it starts with 1, but for
 %                   the squared RIR, the 1 may be at a later point. This is 
@@ -16,7 +18,9 @@ function [decay, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, ignoreOn
 %                   maxima in the frequency bands
 %
 % Outputs:
-%   decay           - energy decay curves in octave-bands, linear scale [lenDecay, numBands]
+%   decayFBands     - energy decay curves in specified octave-bands and the 
+%                   lowpass/highpass band if includeResidualBands=true, in
+%                   linear scale [lenDecay, numBands]
 %   normvals        - (optional) scaling values in case "normalize" is true
 %
 % (c) Georg Götz, Aalto University, 2020
@@ -27,8 +31,8 @@ end
 if ~exist('doBackwardsInt', 'var')
     doBackwardsInt = false;
 end
-if ~exist('ignoreOnset', 'var')
-    ignoreOnset = false;
+if ~exist('analyseFullRIR', 'var')
+    analyseFullRIR = true;
 end
 if ~exist('normalize', 'var')
     normalize = false;
@@ -36,42 +40,41 @@ end
 
 numBands = numel(fBands);
 
-% Apply octave band filters to RIR, order=3
-fOrder = 3;
-rirFBands = zeros(size(rir));
-for bandIdx=1:numBands
-    [B, A] = octdsgn(fBands(bandIdx), fs, fOrder);
-    rirFBands(:, bandIdx) = filter(B, A, rir);
-end
+% Remove trailing zeros
+nTrailingZeros = find(flipud(rir), 1);
+rir = rir(1:end-nTrailingZeros+1);
+
+% Apply octave band filters to RIR, order=5
+rirFBands = octaveFiltering(rir, fs, fBands);
 
 % detect peak in rir, because the decay will be calculated from that point
 % onwards
-if ignoreOnset
+if analyseFullRIR
     t0 = 1;
 else
     t0 = rirOnset(rir);
+%     [~, t0] = max(rir.^2); % very approximate alternative, if rirOnset does not give a good result
 end
-% [~, t0] = max(rir.^2);
 
 % get octave filtered rir from rir peak onwards
 rirFBands = rirFBands(t0:end, :);
 
 % calculate decay curves for every band
-decay = zeros(size(rirFBands));
+decayFBands = zeros(size(rirFBands));
 for bIdx = 1:numBands
-    this_rir = rirFBands(:, bIdx); 
+    thisRIR = rirFBands(:, bIdx); 
     if doBackwardsInt == true
-        decay(:, bIdx) = schroederInt(this_rir);
+        decayFBands(:, bIdx) = schroederInt(thisRIR);
     else
-        decay(:, bIdx) = this_rir.^2;
+        decayFBands(:, bIdx) = thisRIR.^2;
     end
 end
 
 % normalize to max 1 and store normalization values
 normvals = [];
 if normalize == true
-    normvals = max(abs(decay));
-    decay = decay ./ normvals; % normalize to maximum 1
+    normvals = max(abs(decayFBands));
+    decayFBands = decayFBands ./ normvals; % normalize to maximum 1
 end
 
 end
