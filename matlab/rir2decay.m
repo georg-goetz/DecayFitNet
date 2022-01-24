@@ -47,6 +47,10 @@ rir = rir(1:end-nTrailingZeros+1);
 % Apply octave band filters to RIR, order=5
 rirFBands = octaveFiltering(rir, fs, fBands);
 
+% Remove filtering artefacts (last 1 permille) 
+nDiscard = round(1e-3*length(rir));
+rirFBands = rirFBands(1:end-nDiscard, :); 
+
 % detect peak in rir, because the decay will be calculated from that point
 % onwards
 if analyseFullRIR

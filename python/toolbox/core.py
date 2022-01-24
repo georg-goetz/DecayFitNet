@@ -433,6 +433,9 @@ class PreprocessRIR(nn.Module):
         # Filter
         out = self.filterbank(out)
 
+        # Remove filtering artefacts (last 1 permille)
+        out = discard_last_n_percent(out, 0.1)
+
         # Backwards integral
         out = torch.flip(out, [2])
         out = (1 / out.shape[2]) * torch.cumsum(out ** 2, 2)
