@@ -46,7 +46,7 @@ classdef DecayFitNetToolbox < handle
             obj.networkName = sprintf('DecayFitNet_%s', slopeMode);
             
             % Load ONNX model:
-            if exist([obj.networkName, 'model.mat'], 'file')
+            if exist(fullfile(obj.onnxPath, [obj.networkName, 'model.mat']), 'file')
                 fprintf('Loading precompiled model %smodel.mat\n', obj.networkName)
                 obj.onnxModel = load(fullfile(obj.onnxPath, [obj.networkName, 'model.mat'])).tmp;
             else
