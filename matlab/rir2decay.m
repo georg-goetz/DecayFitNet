@@ -50,7 +50,8 @@ fprintf('Processing the band with center frequency: ');
 % Apply octave band filters to RIR, order=3
 rirFBands = zeros(length(rir), numBands);
 for bIdx = 1:numBands
-    thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
+%     thisBand = fBands(bIdx) .* [1/sqrt(2), sqrt(2)];
+    thisBand = fBands(bIdx) .* [1/sqrt(1.5), sqrt(1.5)];
     fprintf('%d Hz ', fBands(bIdx));
     
 %     % FIR
