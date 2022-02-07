@@ -1,4 +1,4 @@
-function [decayFBands, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, analyseFullRIR, normalize, includeResidualBands)
+function [decayFBands, normvals,rirFBands] = rir2decay(rir, fs, fBands, doBackwardsInt, analyseFullRIR, normalize, includeResidualBands)
 % calculates energy decay curves in octave-bands from a room impulse response
 %
 % Inputs:
