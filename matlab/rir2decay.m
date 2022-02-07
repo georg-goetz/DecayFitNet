@@ -63,12 +63,12 @@ for bIdx = 1:numBands
     %     [z, p, k] = cheby1(3, 1, thisBand/fs*2, 'bandpass');
     
     % Variant 1: Zero phase filtering
-    [sos, g] = zp2sos(z, p, k);
-    rirFBands(:, bIdx) = filtfilt(sos, g, rir);
+%     [sos, g] = zp2sos(z, p, k);
+%     rirFBands(:, bIdx) = filtfilt(sos, g, rir);
     
-%     % Variant 2: Regular IIR filtering
-%     sos = zp2sos(z, p, k);
-%     rirFBands(:, bIdx) = sosfilt(sos, rir);
+    % Variant 2: Regular IIR filtering
+    sos = zp2sos(z, p, k);
+    rirFBands(:, bIdx) = sosfilt(sos, rir);
 end
 
 if includeResidualBands == true
@@ -86,17 +86,17 @@ if includeResidualBands == true
 %     [zLow, pLow, kLow] = cheby1(3, 1, (1/sqrt(2))*fBands(1)/fs*2);
 %     [zHigh, pHigh, kHigh] = cheby1(3, 1, sqrt(2)*fBands(end)/fs*2, 'high');
         
-    % Variant 1: Zero phase filtering
-    [sosLow, gLow] = zp2sos(zLow, pLow, kLow);
-    [sosHigh, gHigh] = zp2sos(zHigh, pHigh, kHigh);
-    rirLowpass = filtfilt(sosLow, gLow, rir);
-    rirHighpass = filtfilt(sosHigh, gHigh, rir);
-    
-%     % Variant2: Regular filtering
-%     sosLow = zp2sos(zLow, pLow, kLow);
-%     sosHigh = zp2sos(zHigh, pHigh, kHigh);
-%     rirLowpass = sosfilt(sosLow, rir);
-%     rirHighpass = sosfilt(sosHigh, rir);
+%     % Variant 1: Zero phase filtering
+%     [sosLow, gLow] = zp2sos(zLow, pLow, kLow);
+%     [sosHigh, gHigh] = zp2sos(zHigh, pHigh, kHigh);
+%     rirLowpass = filtfilt(sosLow, gLow, rir);
+%     rirHighpass = filtfilt(sosHigh, gHigh, rir);
+%     
+    % Variant2: Regular filtering
+    sosLow = zp2sos(zLow, pLow, kLow);
+    sosHigh = zp2sos(zHigh, pHigh, kHigh);
+    rirLowpass = sosfilt(sosLow, rir);
+    rirHighpass = sosfilt(sosHigh, rir);
     
     rirFBands = [rirLowpass, rirFBands, rirHighpass];
     numBands = numBands + 2;
