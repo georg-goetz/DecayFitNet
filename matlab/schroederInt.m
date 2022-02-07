@@ -20,8 +20,9 @@ end
 
 irFlipped = flipud(rir(1:upperLim)); % flip, because of backwards integration
 irSquared = irFlipped.^2;
-irIntegrated = (1/length(rir)) * cumtrapz(irSquared); % integrate with trapezoids
-decay = flipud(irIntegrated(2:end)); % flip again, so that decay is right way around, and get rid of 0 value (would throw error when calculating log)
-decay = [decay; decay(end)]; % repeat last value so decay has same length as rir
+decay = flipud(cumsum(irSquared));
+% irIntegrated = (1/length(rir)) * cumtrapz(irSquared); % integrate with trapezoids
+% decay = flipud(irIntegrated(2:end)); % flip again, so that decay is right way around, and get rid of 0 value (would throw error when calculating log)
+% decay = [decay; decay(end)]; % repeat last value so decay has same length as rir
 
 end
