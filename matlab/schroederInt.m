@@ -18,7 +18,7 @@ else
     assert(upperLim <= length(rir), 'Upper limit of integration must be smaller than length of RIR.');
 end
 
-irFlipped = flipud(rir(1:upperLim)); % flip, because of backwards integration
+irFlipped = flipud(rir(1:upperLim,:)); % flip, because of backwards integration
 irSquared = irFlipped.^2;
 decay = flipud(cumsum(irSquared));
 % irIntegrated = (1/length(rir)) * cumtrapz(irSquared); % integrate with trapezoids
