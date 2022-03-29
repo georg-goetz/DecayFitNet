@@ -43,11 +43,8 @@ classdef DecayFitNetToolbox < handle
             else
                 error('Please specify a valid number of slopes to be predicted by the network (nSlopes=1,2,3 for 1,2,3 slopes plus noise, respectively, or nSlopes=0 to let the network infer the number of slopes [max 3 slopes]).');
             end
-            if obj.nSlopes ~=0
-                obj.networkName = sprintf('DecayFitNet_%soffset_', slopeMode);
-            else
-                obj.networkName = 'DecayFitNet_';
-            end
+            
+            obj.networkName = sprintf('DecayFitNet_%s', slopeMode);
             
             % Load ONNX model:
             if exist(fullfile(obj.onnxPath, [obj.networkName, 'model.mat']), 'file')
@@ -66,11 +63,7 @@ classdef DecayFitNetToolbox < handle
             disp(obj.onnxModel)
             
             % Load input transform for preprocessing the network inputs
-            if obj.nSlopes ~=0
-                fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%soffset_p2.pkl', slopeMode)),'rb');
-            else
-                fid = py.open(fullfile(obj.onnxPath, 'input_transform_p2.pkl'),'rb');
-            end
+            fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
             obj.inputTransform = py.pickle.load(fid);
             
             % Init preprocessing
