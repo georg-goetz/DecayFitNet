@@ -79,20 +79,6 @@ normvals = [];
 if normalize == true
     normvals = max(abs(decayFBands));
     decayFBands = decayFBands ./ normvals; % normalize to maximum 1
-    
-    % compensate the filter energy loss
-    % This the ratio between the ideal bandpass signal and a filtered bandpass
-    % signal.
-    filterFactor = db2mag([15.7158  -13.4540   -6.4259   -5.8049   -5.0090   -4.8093   -4.6998   -4.6814    0.5196  -10.0050]);
-    
-    if includeResidualBands == true
-    else
-        filterFactor = filterFactor(2:end-1);
-    end
-    
-    normvals = normvals ./ filterFactor;
 end
-
-
 
 end

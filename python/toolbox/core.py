@@ -243,7 +243,7 @@ class FilterByOctaves(nn.Module):
         out = []
         for this_sos in self._sos:
             tmp = torch.clone(x).cpu().numpy()
-            tmp = scipy.signal.sosfiltfilt(this_sos, tmp, axis=-1)
+            tmp = scipy.signal.sosfilt(this_sos, tmp, axis=-1)
             out.append(torch.from_numpy(tmp.copy()))
         out = torch.stack(out, dim=-2)  # Stack over frequency bands
 

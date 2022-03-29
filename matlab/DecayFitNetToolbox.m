@@ -65,24 +65,18 @@ classdef DecayFitNetToolbox < handle
             
             disp(obj.onnxModel)
             
+            % Load input transform for preprocessing the network inputs
             if obj.nSlopes ~=0
-                fid = py.open(fullfile(obj.PATH_ONNX, sprintf('input_transform_%soffset_p2.pkl', slopeMode)),'rb');
+                fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%soffset_p2.pkl', slopeMode)),'rb');
             else
-                fid = py.open(fullfile(obj.PATH_ONNX, 'input_transform_p2.pkl'),'rb');
+                fid = py.open(fullfile(obj.onnxPath, 'input_transform_p2.pkl'),'rb');
             end
-            obj.input_transform = py.pickle.load(fid);
-        end
-                
-        function [edcs, scaleAdjustFactors, normVals] = preprocess(obj, signal, includeResidualBands)
-            if nargin < 3
-                includeResidualBands = false;
-            end
+            obj.inputTransform = py.pickle.load(fid);
             
             % Init preprocessing
-            obj.preprocessing = PreprocessRIR(inputTransform, sampleRate, filterFrequencies, obj.outputSize);
-            
+            obj.preprocessing = PreprocessRIR(obj.inputTransform, sampleRate, filterFrequencies, obj.outputSize);
         end
-        
+                        
         function setFilterFrequencies(obj, filterFrequencies)
             obj.preprocessing.filterFrequencies = filterFrequencies;
         end
