@@ -12,13 +12,13 @@ function [decayFBands, normvals] = rir2decay(rir, fs, fBands, doBackwardsInt, an
 %                   everything in the RIR before the onset/direct sound
 %   normalize       - normalize the decay to a maximum of 1. NOTE: for the
 %                   Schroeder decay, this means it starts with 1, but for
-%                   the squared RIR, the 1 may be at a later point. This is 
-%                   because the analysis is carried out starting from the 
-%                   maximum of the full impulse response and not from the 
+%                   the squared RIR, the 1 may be at a later point. This is
+%                   because the analysis is carried out starting from the
+%                   maximum of the full impulse response and not from the
 %                   maxima in the frequency bands
 %
 % Outputs:
-%   decayFBands     - energy decay curves in specified octave-bands and the 
+%   decayFBands     - energy decay curves in specified octave-bands and the
 %                   lowpass/highpass band if includeResidualBands=true, in
 %                   linear scale [lenDecay, numBands]
 %   normvals        - (optional) scaling values in case "normalize" is true
@@ -57,7 +57,7 @@ if analyseFullRIR
     t0 = 1;
 else
     t0 = rirOnset(rir);
-%     [~, t0] = max(rir.^2); % very approximate alternative, if rirOnset does not give a good result
+    %     [~, t0] = max(rir.^2); % very approximate alternative, if rirOnset does not give a good result
 end
 
 % get octave filtered rir from rir peak onwards
@@ -66,7 +66,7 @@ rirFBands = rirFBands(t0:end, :);
 % calculate decay curves for every band
 decayFBands = zeros(size(rirFBands));
 for bIdx = 1:numBands
-    thisRIR = rirFBands(:, bIdx); 
+    thisRIR = rirFBands(:, bIdx);
     if doBackwardsInt == true
         decayFBands(:, bIdx) = schroederInt(thisRIR);
     else
@@ -79,7 +79,20 @@ normvals = [];
 if normalize == true
     normvals = max(abs(decayFBands));
     decayFBands = decayFBands ./ normvals; % normalize to maximum 1
+    
+    % compensate the filter energy loss
+    % This the ratio between the ideal bandpass signal and a filtered bandpass
+    % signal.
+    filterFactor = db2mag([15.7158  -13.4540   -6.4259   -5.8049   -5.0090   -4.8093   -4.6998   -4.6814    0.5196  -10.0050]);
+    
+    if includeResidualBands == true
+    else
+        filterFactor = filterFactor(2:end-1);
+    end
+    
+    normvals = normvals ./ filterFactor;
 end
 
+
+
 end
-    

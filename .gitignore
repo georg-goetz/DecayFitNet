@@ -63,3 +63,5 @@ model/DecayFitNet_3slopes_model.mat
 model/DecayFitNet_model.m
 
 model/DecayFitNet_model.mat
+
+data/synthEDCs/

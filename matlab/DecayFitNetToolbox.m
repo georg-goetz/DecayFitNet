@@ -43,7 +43,11 @@ classdef DecayFitNetToolbox < handle
             else
                 error('Please specify a valid number of slopes to be predicted by the network (nSlopes=1,2,3 for 1,2,3 slopes plus noise, respectively, or nSlopes=0 to let the network infer the number of slopes [max 3 slopes]).');
             end
-            obj.networkName = sprintf('DecayFitNet_%s', slopeMode);
+            if obj.nSlopes ~=0
+                obj.networkName = sprintf('DecayFitNet_%soffset_', slopeMode);
+            else
+                obj.networkName = 'DecayFitNet_';
+            end
             
             % Load ONNX model:
             if exist(fullfile(obj.onnxPath, [obj.networkName, 'model.mat']), 'file')
@@ -61,10 +65,18 @@ classdef DecayFitNetToolbox < handle
             
             disp(obj.onnxModel)
             
-            % Load input transform for preprocessing the network inputs
-            fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
-            inputTransform = py.pickle.load(fid);
-            obj.inputTransform = inputTransform;
+            if obj.nSlopes ~=0
+                fid = py.open(fullfile(obj.PATH_ONNX, sprintf('input_transform_%soffset_p2.pkl', slopeMode)),'rb');
+            else
+                fid = py.open(fullfile(obj.PATH_ONNX, 'input_transform_p2.pkl'),'rb');
+            end
+            obj.input_transform = py.pickle.load(fid);
+        end
+                
+        function [edcs, scaleAdjustFactors, normVals] = preprocess(obj, signal, includeResidualBands)
+            if nargin < 3
+                includeResidualBands = false;
+            end
             
             % Init preprocessing
             obj.preprocessing = PreprocessRIR(inputTransform, sampleRate, filterFrequencies, obj.outputSize);
