@@ -107,8 +107,12 @@ classdef BayesianDecayAnalysis < handle
             obj.nSpace = logspace(obj.nRange(1), obj.nRange(2), obj.nPointsPerDim);
         end
         
-        function [tVals, aVals, nVals, normVals] = estimateParameters(obj, rir)
-            [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir);
+        function [tVals, aVals, nVals, normVals] = estimateParameters(obj, rir, inputIsEDC)
+            if ~exist('inputIsEDC', 'var')
+                inputIsEDC = false;
+            end
+            
+            [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir, inputIsEDC);
  
             % in nSlope estimation mode: max number of slopes is hard-coded
             % in get method (3 is usually enough)

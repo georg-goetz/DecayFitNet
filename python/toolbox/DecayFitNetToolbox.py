@@ -79,12 +79,13 @@ class DecayFitNetToolbox:
         edcs, norm_vals = self._preprocess(signal)
         return edcs, norm_vals
 
-    def estimate_parameters(self, signal: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    def estimate_parameters(self, input: torch.Tensor, input_is_edc: bool = False) -> Tuple[List[torch.Tensor], torch.Tensor]:
         """ Estimates the parameters for this impulse response. The resulting fitted EDC is normalized to 0dB and can be
         re-normalized to the original level with norm_vals
 
         Args:
-            signal: [rir_length, 1], rir to be analyzed
+            input: [rir_length, 1], rir to be analyzed
+            input_is_edc: bool that indicates if input is edc or rir
 
         The estimation returns:
             Tuple of:
@@ -96,7 +97,7 @@ class DecayFitNetToolbox:
                                               but if the initial level is required, norm_vals will return it
 
         """
-        edcs, __, norm_vals, scale_adjust_factors = self._preprocess(signal)
+        edcs, __, norm_vals, scale_adjust_factors = self._preprocess(input, input_is_edc)
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)

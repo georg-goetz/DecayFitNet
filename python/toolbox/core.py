@@ -386,19 +386,30 @@ class PreprocessRIR(nn.Module):
     def get_filter_frequencies(self):
         return self.filterbank.get_center_frequencies()
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
-        # Extract decays: Do backwards integration
-        schroeder_decays, norm_vals = self.schroeder(x)
+    def forward(self, input: torch.Tensor, input_is_edc: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
+        if len(input.shape) == 1:
+            input = input.unsqueeze(1)
+        if input.shape[0] > input.shape[-1]:
+            input = input.swapaxes(0, -1)
+
+        if input_is_edc:
+            norm_vals = torch.max(input, dim=-1, keepdim=True).values  # per channel
+            schroeder_decays = input / norm_vals
+            if len(input.shape) == 2:
+                schroeder_decays = schroeder_decays.unsqueeze(1)
+        else:
+            # Extract decays from RIR: Do backwards integration
+            schroeder_decays, norm_vals = self.schroeder(input)
 
         # Convert to dB
         schroeder_decays_db = 10 * torch.log10(schroeder_decays + self.eps)
 
         # N values have to be adjusted for downsampling
-        n_adjust = schroeder_decays_db.shape[2] / self.output_size
+        n_adjust = schroeder_decays_db.shape[-1] / self.output_size
 
         # DecayFitNet: T value predictions have to be adjusted for the time-scale conversion
         if self.input_transform is not None:
-            t_adjust = 10 / (schroeder_decays_db.shape[2] / self.sample_rate)
+            t_adjust = 10 / (schroeder_decays_db.shape[-1] / self.sample_rate)
         else:
             t_adjust = 1
 
@@ -442,10 +453,10 @@ class PreprocessRIR(nn.Module):
         out = torch.flip(out, [2])
 
         # Normalize to 1
-        norm_factors = torch.max(out, dim=-1, keepdim=True).values  # per channel
-        out = out / norm_factors
+        norm_vals = torch.max(out, dim=-1, keepdim=True).values  # per channel
+        out = out / norm_vals
 
-        return out, norm_factors.squeeze(2)
+        return out, norm_vals.squeeze(2)
 
 
 def _postprocess_parameters(t_vals, a_vals, n_vals, scale_adjust_factors, exactly_n_slopes_mode):

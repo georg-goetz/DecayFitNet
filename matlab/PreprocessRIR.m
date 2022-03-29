@@ -36,12 +36,21 @@ classdef PreprocessRIR < handle
             obj.filterFrequencies = filterFrequencies;
         end
         
-        function [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = preprocess(obj, rir)
-            % Extract decays: Do backwards integration
-            [schroederDecays, normVals] = rir2decay(rir, obj.sampleRate, obj.filterFrequencies, true, true, true); % doBackwardsInt, analyseFullRIR, normalize
+        function [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = preprocess(obj, input, inputIsEDC)            
+            if size(input, 2) > size(input, 1)
+                input = input.';
+            end
+            if inputIsEDC==true
+                normVals = max(abs(input));
+                schroederDecays = input ./ normVals;
+                nBands = size(input, 2);
+            else
+                % Extract decays from RIR: Do backwards integration
+                [schroederDecays, normVals] = rir2decay(input, obj.sampleRate, obj.filterFrequencies, true, true, true); % doBackwardsInt, analyseFullRIR, normalize
+                nBands = length(obj.filterFrequencies);
+            end
             
             % Init arrays
-            nBands = length(obj.filterFrequencies);
             edcs = zeros(nBands, obj.outputSize);
             % -- DecayFitNet: T value predictions have to be adjusted for the time-scale conversion
             tAdjustFactors = ones(nBands, 1);

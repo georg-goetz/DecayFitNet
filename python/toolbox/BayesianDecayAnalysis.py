@@ -123,12 +123,13 @@ class BayesianDecayAnalysis:
         self._a_space = a_space
         self._n_space = n_space
 
-    def estimate_parameters(self, signal: np.ndarray) -> Tuple[List[np.ndarray], np.ndarray]:
+    def estimate_parameters(self, input: np.ndarray, input_is_edc: bool = False) -> Tuple[List[np.ndarray], np.ndarray]:
         """ Estimates the parameters for this impulse response. The resulting fitted EDC is normalized to 0dB and can be
         re-normalized to the original level with norm_vals
 
         Args:
-            signal: [rir_length, 1], rir to be analyzed
+            input: [rir_length, 1], rir to be analyzed
+            input_is_edc: bool that indicates if input is edc or rir
 
         The estimation returns:
             Tuple of:
@@ -141,7 +142,7 @@ class BayesianDecayAnalysis:
 
         """
         # Pre-process RIR to get EDCs
-        edcs, time_axis_ds, norm_vals, scale_adjust_factors = self._preprocess(signal)
+        edcs, time_axis_ds, norm_vals, scale_adjust_factors = self._preprocess(input, input_is_edc)
         edcs = edcs.detach().numpy()
         time_axis_ds = time_axis_ds.detach().numpy()
         norm_vals = norm_vals.detach().numpy()
