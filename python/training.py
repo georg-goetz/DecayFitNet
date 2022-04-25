@@ -96,6 +96,8 @@ def test(args, net, testloader, epoch, input_transform, tb_writer):
     with torch.no_grad():
         n_already_analyzed = 0
         total_test_loss = 0
+        quantile_loss = 0
+
         for batch_idx, data_frame in enumerate(testloader):
             edcs = data_frame
 
@@ -119,14 +121,18 @@ def test(args, net, testloader, epoch, input_transform, tb_writer):
                 a_prediction[~mask] = 0
 
             # Calculate EDC Loss
-            edc_loss_val = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device, training_flag=False)
-            total_test_loss += (edcs.shape[0] / len(testloader.dataset)) * edc_loss_val
+            edc_loss_val = core.edc_loss(t_prediction, a_prediction, n_prediction, edcs, device, training_flag=False,
+                                         apply_mean=False)
+            total_test_loss += (edcs.shape[0] / len(testloader.dataset)) * torch.mean(edc_loss_val)
+            this_quantile_loss = torch.quantile(torch.mean(edc_loss_val, 1), 0.99)
+            if this_quantile_loss > quantile_loss:
+                quantile_loss = this_quantile_loss
 
             n_already_analyzed += edcs.shape[0]
             print('Test Epoch: {} [{}/{} ({:.0f}%)]\t EDC Loss (dB): {:.3f}'.format(
                 epoch, n_already_analyzed, len(testloader.dataset),
-                100. * n_already_analyzed / len(testloader.dataset), edc_loss_val))
-            tb_writer.add_scalar('Loss/EDC_test_step_Motus', edc_loss_val, (epoch - 1) * len(testloader) + batch_idx)
+                100. * n_already_analyzed / len(testloader.dataset), torch.mean(edc_loss_val)))
+            tb_writer.add_scalar('Loss/EDC_test_step_Motus', torch.mean(edc_loss_val), (epoch - 1) * len(testloader) + batch_idx)
             tb_writer.flush()
 
         print('Test Epoch: {} [{}/{} ({:.0f}%)]\t === Total EDC Loss (dB): {:.3f} ==='.format(
@@ -135,7 +141,7 @@ def test(args, net, testloader, epoch, input_transform, tb_writer):
         tb_writer.add_scalar('Loss/EDC_test_epoch_Motus', total_test_loss, epoch)
         tb_writer.flush()
 
-    return total_test_loss
+    return total_test_loss, quantile_loss
 
 
 def main():
@@ -146,7 +152,7 @@ def main():
     parser.add_argument('--n-layers', type=int, default=3, metavar='N_layer',
                         help='number of layers in the neural network (default: 3)')
     parser.add_argument('--n-filters', type=int, default=64, metavar='N_filt',
-                        help='number of filters in the conv neural network (default: 128)')
+                        help='number of filters in the conv neural network (default: 64)')
     parser.add_argument('--relu-slope', type=float, default=0.0, metavar='relu',
                         help='negative relu slope (default: 0.0)')
     parser.add_argument('--dropout', type=float, default=0.0, metavar='DO',

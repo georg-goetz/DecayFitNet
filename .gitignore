@@ -65,3 +65,13 @@ model/DecayFitNet_model.m
 model/DecayFitNet_model.mat
 
 data/synthEDCs/
+
+model/archive/
+
+model/min15Tmin10A/
+
+model/min2Tmin10A/
+
+model/onlyTrainedWithExactlyN/
+
+model/tuningmin15min10A/
