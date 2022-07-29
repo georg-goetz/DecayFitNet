@@ -1,8 +1,10 @@
 # DecayFitNet
 This toolbox accompanies the following paper:
->Georg Götz, Ricardo Falcón Pérez, Sebastian J. Schlecht, and Ville Pulkki, *"Neural network for multi-exponential sound energy decay analysis"*, submitted to Journal of the Acoustical Society of America, 2022.
+>Georg Götz, Ricardo Falcón Pérez, Sebastian J. Schlecht, and Ville Pulkki, *"Neural network for multi-exponential sound energy decay analysis"*, accepted for publication in The Journal of the Acoustical Society of America, 2022.
  
-The paper is currently under review at the Journal of the Acoustical Society of America. A preprint can be found at https://doi.org/10.48550/arXiv.2205.09644
+The paper was accepted for publication in The Journal of the Acoustical Society of America. A preprint can be found at https://doi.org/10.48550/arXiv.2205.09644
+
+Please refer to the demo files for a tutorial on how to use this toolbox. A more thorough documentation might be added at a later point, if required. 
 
 ## External dependencies (MATLAB)
 The following toolboxes must be installed in order to run the MATLAB version of the toolbox:
@@ -27,3 +29,9 @@ conda activate decayfitnet
 conda install pytorch torchaudio -c pytorch
 pip install onnx onnxruntime
 ```
+
+## ToDos: 
+Here is a list of ToDos and planned features. If you wrote your own code and feel that it could be part of this toolbox, or you encounter any problems, please reach out to me or submit an issue/pull request. 
+- Efficient batch processing: while the original pyTorch models can be easily used for batch processing of multiple EDFs, the current architecture of MATLAB and python wrappers does not support this yet. Of course this feature would be very desirable in the future, so it will be definitely worked on at some point.
+- Optimization of the octave filters: the octave-band filtering for sound energy decay analysis is an interesting problem, which needs some more work. There is a trade-off between filter selectivity and artefacts (pre-ringing, etc.). We have already spent some time working on this, but we have not come up with a satisfactory solution yet. 
+- Speeding up the Bayesian analysis: at this point the Bayesian analysis is somewhat slow. This may very well be due to our implementation. If you are an expert in Bayesian decay analysis and have your own code that you want to contribute, please let us know.
