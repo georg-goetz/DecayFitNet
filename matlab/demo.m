@@ -3,16 +3,16 @@ close all; clear variables; clc; lastwarn('');
 
 %% Parameters
 audioPath = '../data/exampleRIRs';  %local path
-rirFName = '0001_1_sh_rirs.wav';  % First measurement of Motus dataset
+rirFName = 'doubleslope_RIR_200cm.wav';
 
-fadeoutLength = 0;  % in secs
-nSlopes = 0; % 0 = network estimates number of active slopes
+nSlopes = 0; % 0 = network/bayesian estimates number of active slopes; otherwise, if you know number of slopes before, put it here (max. 3)
+cutFromEnd = 0;  % specify how much you want to cut away from the end of the RIR in seconds, for example if there are lots of trailing zeros or a fade-out winow
 
 % Bayesian parameters
-parameterRanges.tRange = [0.1, 3.5];
-parameterRanges.aRange = [-3, 0]; % 10^aRange
-parameterRanges.nRange = [-10, -2]; % 10^nRange
-nIterations = 100;
+parameterRanges.tRange = [0.15, 3.75];
+parameterRanges.aRange = [-4.5, 0]; % 10^aRange
+parameterRanges.nRange = [-14, -2]; % 10^nRange
+nIterations = 1000;
 
 %% Load an impulse
 [rir, fs] = audioread(fullfile(audioPath, rirFName));
@@ -25,8 +25,8 @@ if size(rir, 1) > 1 && length(size(rir)) > 1
 end
 
 % Delete potential fade-out windows
-if fadeoutLength > 0
-    rir = rir(1:end + round(-fadeoutLength*fs), :);
+if cutFromEnd > 0
+    rir = rir(1:end + round(-cutFromEnd*fs), :);
 end
 
 fprintf('The impulse has %d channels (before selecting the first one).\n', channels)
@@ -72,9 +72,15 @@ for bandIdx=1:size(trueEDCs, 1)
 end
 legend(legendStr, 'Location', 'EastOutside');
 title('DecayFitNet: Measured vs. estimated EDC fits');
+drawnow;
 
 fprintf('==== Average MSE between input EDCs and estimated fits: %.02f ====\n', mean(allMSE));
 fprintf('MSE between input EDC and estimated fit for different frequency bands:\n 125 Hz: %.02f, 250 Hz: %.02f, 500 Hz: %.02f, 1 kHz: %.02f, 2 kHz: %.02f, 4 kHz: %.02f\n', allMSE(:));
+
+% DecayFitNet can also be directly applied to the EDC/EDF
+inputIsEDC = true;
+[tVals_decayfitnet2, aVals_decayfitnet2, nVals_decayfitnet2, normVals_decayfitnet2] = net.estimateParameters(trueEDCs, inputIsEDC);
+estimatedEDCs_decayfitnet2 = generateSyntheticEDCs(tVals_decayfitnet2, aVals_decayfitnet2, nVals_decayfitnet2, timeAxis);
 
 %% Use Bayesian decay analysis with slice sampling
 bda = BayesianDecayAnalysis(nSlopes, fs, parameterRanges, nIterations);
@@ -109,3 +115,17 @@ for bandIdx=1:size(trueEDCs, 1)
 end
 legend(legendStr, 'Location', 'EastOutside');
 title('Bayesian decay analysis: Measured vs. estimated EDC fits');
+
+% Bayesian analysis can also be directly applied to the EDC/EDF
+inputIsEDC = true;
+[tVals_bayesian2, aVals_bayesian2, nVals_bayesian2, normVals_bayesian2] = bda.estimateParameters(trueEDCs, inputIsEDC);
+estimatedEDCs_bayesian2 = generateSyntheticEDCs(tVals_bayesian2, aVals_bayesian2, nVals_bayesian2, timeAxis);
+
+% Bayesian analysis can use either the evidence or the IBIC for the model
+% order selection. The evidence-based analysis leverages the full potential
+% of the slice sampling algorithm, while the IBIC might be faster in this
+% implementation.
+inputIsEDC = false;
+modelEstimationMode = 'ibic'; % default is 'evidence'
+[tVals_bayesian3, aVals_bayesian3, nVals_bayesian3, normVals_bayesian3] = bda.estimateParameters(rir, inputIsEDC, modelEstimationMode);
+estimatedEDCs_bayesian3 = generateSyntheticEDCs(tVals_bayesian3, aVals_bayesian3, nVals_bayesian3, timeAxis);

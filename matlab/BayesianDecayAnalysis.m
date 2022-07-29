@@ -1,7 +1,7 @@
 classdef BayesianDecayAnalysis < handle
     
     properties        
-        nPointsPerDim = 100; % defines parameter space and slice window (increment in steps of 1)
+        nPointsPerDim = 200; % defines parameter space and slice window (increment in steps of 1)
         nIterations = 50;
         
         nSlopes
@@ -32,9 +32,9 @@ classdef BayesianDecayAnalysis < handle
                 sampleRate = 48000;
             end
             if nargin < 3
-                parameterRanges.tRange = [0.1, 3.5];
-                parameterRanges.aRange = [-3, 0]; % 10^aRange
-                parameterRanges.nRange = [-10, -2]; % 10^nRange
+                parameterRanges.tRange = [0.15, 3.75];
+                parameterRanges.aRange = [-45, 0]; % 10^aRange
+                parameterRanges.nRange = [-14, -2]; % 10^nRange
             end
             if nargin < 4
                 nIterations = 50;
@@ -107,10 +107,19 @@ classdef BayesianDecayAnalysis < handle
             obj.nSpace = logspace(obj.nRange(1), obj.nRange(2), obj.nPointsPerDim);
         end
         
-        function [tVals, aVals, nVals, normVals] = estimateParameters(obj, rir, inputIsEDC)
+        function [tVals, aVals, nVals, normVals] = estimateParameters(obj, rir, inputIsEDC, modelEstimationMode)
+            % modelEstimationMode - determines the mode for the model order
+            % estimation. Can either be 'evidence' or 'ibic'. 'Evidence'
+            % leverages the full potential of the slice sampling algorithm,
+            % while 'ibic' is a faster approximation
             if ~exist('inputIsEDC', 'var')
                 inputIsEDC = false;
             end
+            if ~exist('modelEstimationMode', 'var')
+                modelEstimationMode = 'evidence';
+            end
+            modelEstimationMode = lower(modelEstimationMode);
+            assert(strcmp(modelEstimationMode, 'evidence') || strcmp(modelEstimationMode, 'ibic'), 'Model estimation mode must be either "evidence" or "ibic".');
             
             [edcs, timeAxis_ds, normVals, scaleAdjustFactors] = obj.preprocessing.preprocess(rir, inputIsEDC);
  
@@ -123,7 +132,7 @@ classdef BayesianDecayAnalysis < handle
             
             % go over all frequency bands
             for bandIdx=1:nBands
-                [tPrediction, aPrediction, nPrediction] = obj.estimation(edcs(bandIdx, :), timeAxis_ds);
+                [tPrediction, aPrediction, nPrediction] = obj.estimation(edcs(bandIdx, :), timeAxis_ds, modelEstimationMode);
                 nSlopesPrediction = size(tPrediction, 2);
                 tVals(bandIdx, 1:nSlopesPrediction) = tPrediction;
                 aVals(bandIdx, 1:nSlopesPrediction) = aPrediction;
@@ -136,7 +145,7 @@ classdef BayesianDecayAnalysis < handle
             [tVals, aVals, nVals] = postprocessDecayParameters(tVals, aVals, nVals, scaleAdjustFactors, nSlopeEstimationMode);
         end
                         
-        function [tVals, aVals, nVal] = estimation(obj, edc_db, timeAxis)
+        function [tVals, aVals, nVal] = estimation(obj, edc_db, timeAxis, modelEstimationMode)
             % Following Xiang, N., Goggans, P., Jasa, T. & Robinson, P. "Bayesian characterization of multiple-slope sound energy decays in coupled-volume systems." J Acoust Soc Am 129, 741–752 (2011).
             
             assert(length(edc_db) == length(timeAxis), 'Time axis does not match EDC.');
@@ -148,7 +157,8 @@ classdef BayesianDecayAnalysis < handle
             end
             
             allMaxLikelihoodParams = cell(length(modelOrders), 1);
-            allBICs = zeros(length(modelOrders), 1);
+            allIBICs = zeros(length(modelOrders), 1);
+            allEvidences = zeros(length(modelOrders), 1);
             
             % go through all possible model orders and find max likelihood
             for thisModelOrderIdx = 1:length(modelOrders)
@@ -156,22 +166,41 @@ classdef BayesianDecayAnalysis < handle
                 
                 % Do slice sampling to determine likelihoods for multiple
                 % parameter combinations
-                [testedParameters, likelihoods] = obj.sliceSampling(edc_db, thisModelOrder, timeAxis);
+                [~, ~, allSampledParams, allSampledLikelihoods] = obj.sliceSampling(edc_db, thisModelOrder, timeAxis);
                 
                 % Find maximum likelihood and corresponding parameter
                 % combination
-                [maxLikelihood, maxLikelihoodIdx] = max(likelihoods);
-                allMaxLikelihoodParams{thisModelOrderIdx} = testedParameters(maxLikelihoodIdx, :);
-                
-                % Determine BIC for this maximum likelihood and model
-                % order: this is used to estimate the model order if
-                % desired
-                allBICs(thisModelOrderIdx) = 2*log(maxLikelihood) - (2*thisModelOrder + 1)*log(length(timeAxis)); % Eq. (15)
+                [maxLikelihood, maxLikelihoodIdx] = max(allSampledLikelihoods);
+                allMaxLikelihoodParams{thisModelOrderIdx} = allSampledParams(maxLikelihoodIdx, :);
+                    
+                if strcmp(modelEstimationMode, 'evidence')
+                    % Estimate the Bayesian evidence based on sampled
+                    % combinations: calculate histogram before to scale
+                    % likelihoods by the number of times that a combination was
+                    % drawn
+                    [~, ~, uniqueIdx] = unique(allSampledParams, 'rows');
+                    nSampledCounts = zeros(size(uniqueIdx));
+                    for idx=1:length(nSampledCounts)
+                        nSampledCounts(idx) = sum(uniqueIdx==uniqueIdx(idx));
+                    end
+                    allEvidences(thisModelOrderIdx) = mean((1./nSampledCounts).*allSampledLikelihoods);
+                elseif strcmp(modelEstimationMode, 'ibic')
+                    % Determine IBIC for this maximum likelihood and model
+                    % order: this is used to estimate the model order if
+                    % desired. IBIC is only an approximation and does not
+                    % leverage the full potential of the slice sampling.
+                    % However, it may be faster in this implementation.
+                    allIBICs(thisModelOrderIdx) = 2*log(maxLikelihood) - (2*thisModelOrder + 1)*log(length(timeAxis)); % Eq. (15)
+                end
             end
-
-            % Find model with highest BIC: model that describes data best
-            % with most concise model
-            [~, bestModelOrderIdx] = max(allBICs);
+            
+            % Find model with highest evidence or IBIC: model that
+            % describes data best with most concise model
+            if strcmp(modelEstimationMode, 'evidence')
+                [~, bestModelOrderIdx] = max(allEvidences);
+            elseif strcmp(modelEstimationMode, 'ibic')
+                [~, bestModelOrderIdx] = max(allIBICs);
+            end
             bestModelOrder = modelOrders(bestModelOrderIdx);
             bestModelParams = allMaxLikelihoodParams{bestModelOrderIdx};
 
@@ -180,7 +209,7 @@ classdef BayesianDecayAnalysis < handle
             nVal = obj.nSpace(bestModelParams(2*bestModelOrder+1:end));
         end
         
-        function [testedParameters, likelihoods] = sliceSampling(obj, edc_db, modelOrder, timeAxis)
+        function [testedParameters, likelihoods, allSampledParams, allSampledLikelihoods] = sliceSampling(obj, edc_db, modelOrder, timeAxis)
             % Following Jasa, T. & Xiang, N. "Efficient estimation of decay parameters in acoustically coupled-spaces using slice sampling." J Acoust Soc Am 126, 1269–1279 (2009).
 
             assert(length(obj.tSpace)==length(obj.aSpace) && length(obj.tSpace)==length(obj.nSpace), 'There must be an equal number of T, A, and N values in the parameter space.');
@@ -189,12 +218,26 @@ classdef BayesianDecayAnalysis < handle
             testedParameters = zeros(obj.nIterations, nParameters);
             likelihoods = zeros(obj.nIterations, 1);
             
+            allSampledParams = zeros(100000,nParameters);
+            allSampledLikelihoods = zeros(100000,1);
+            
+            testedParamValues = [];
+            allParamMeans = [];
+            allParamCovs = {};
+            allMeanDiffs = [];
+            allCovDiffs = [];
+            
             % randomly draw first parameter values (indices)
             x0 = randi(obj.nPointsPerDim, nParameters, 1);
             
             % evaluate likelihood for these parameters, and multiply with a
             % random number between 0...1 to determine a likelihood threshold
-            y0 = rand * obj.evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)), obj.aSpace(x0(modelOrder+1:2*modelOrder)), obj.nSpace(x0(2*modelOrder+1)), timeAxis);
+            y0NotScaled = obj.evaluateLikelihood(edc_db, obj.tSpace(x0(1:modelOrder)), obj.aSpace(x0(modelOrder+1:2*modelOrder)), obj.nSpace(x0(2*modelOrder+1)), timeAxis);
+            y0 = rand * y0NotScaled;
+            
+            allSampledParams(1,:) = x0;
+            allSampledLikelihoods(1,:) = y0NotScaled;
+            allIdx=2;
             
             % start to iterate
             for sampleIdx=1:obj.nIterations
@@ -213,7 +256,10 @@ classdef BayesianDecayAnalysis < handle
                 while(thisX0Left(paramIdx)>1)
                     thisX0Left(paramIdx) = thisX0Left(paramIdx) - 1;
                     thisY0Left = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Left(1:modelOrder)), obj.aSpace(thisX0Left(modelOrder+1:2*modelOrder)), obj.nSpace(thisX0Left(2*modelOrder+1)), timeAxis);
-
+                    
+                    allSampledParams(allIdx,:) = thisX0Left;
+                    allSampledLikelihoods(allIdx,:) = thisY0Left;
+                    allIdx = allIdx+1;
                     if(thisY0Left < y0)
                         break;
                     end
@@ -222,10 +268,13 @@ classdef BayesianDecayAnalysis < handle
                 % Find right edge of slice: increase parameter value until
                 % likelihood is below threshold
                 thisX0Right = x0;
-                while(thisX0Right(paramIdx)<obj.nPointsPerDim-1)
+                while(thisX0Right(paramIdx)<obj.nPointsPerDim)
                     thisX0Right(paramIdx) = thisX0Right(paramIdx) + 1;
                     thisY0Right = obj.evaluateLikelihood(edc_db, obj.tSpace(thisX0Right(1:modelOrder)), obj.aSpace(thisX0Right(modelOrder+1:2*modelOrder)), obj.nSpace(thisX0Right(2*modelOrder+1)), timeAxis);
-
+                    
+                    allSampledParams(allIdx,:) = thisX0Right;
+                    allSampledLikelihoods(allIdx,:) = thisY0Right;
+                    allIdx = allIdx+1;
                     if(thisY0Right < y0)
                         break;
                     end
@@ -239,12 +288,25 @@ classdef BayesianDecayAnalysis < handle
                     x1 = x0;
                     
                     % randomly draw varied parameter (index) from the slice
-                    % +1 -1 to avoid randi(0), which gives error
-                    x1(paramIdx) = randi(thisX0Right(paramIdx)-thisX0Left(paramIdx) + 1) + thisX0Left(paramIdx) - 1;
+                    % excluding edges
+                    if thisX0Right(paramIdx)-thisX0Left(paramIdx) == 1
+                        % if slice is only one step wide (should only 
+                        % happen at edges of parameter space: pick randomly 
+                        % left or right edge
+                        sliceEdges = [thisX0Right(paramIdx), thisX0Left(paramIdx)];
+                        x1(paramIdx) = sliceEdges(randi(2));
+                    else
+                        % draw from slice
+                        x1(paramIdx) = randi(thisX0Right(paramIdx)-thisX0Left(paramIdx)-1) + thisX0Left(paramIdx);
+                    end
                     
                     % evaluate likelihood for drawn parameter
                     y1 = obj.evaluateLikelihood(edc_db, obj.tSpace(x1(1:modelOrder)), obj.aSpace(x1(modelOrder+1:2*modelOrder)), obj.nSpace(x1(2*modelOrder+1)), timeAxis);
-
+                    
+                    allSampledParams(allIdx,:) = x1;
+                    allSampledLikelihoods(allIdx,:) = y1;
+                    allIdx = allIdx+1;
+                    
                     if(y1>y0)
                         % higher likelihood found, continue with next 
                         % iteration step
@@ -271,7 +333,34 @@ classdef BayesianDecayAnalysis < handle
                 % prepare for next iteration: new threshold
                 y0 = rand*y1;
                 x0 = x1;
+                
+                % check for convergence
+                theseParamValues = [obj.tSpace(x1(1:modelOrder)), obj.aSpace(x1(modelOrder+1:2*modelOrder)), obj.nSpace(x1(2*modelOrder+1))];
+                testedParamValues = [testedParamValues; theseParamValues];
+                meanParamValues = mean(testedParamValues, 1);
+                covParamValues = cov(testedParamValues);
+                allParamMeans = [allParamMeans; meanParamValues];
+                allParamCovs = [allParamCovs; covParamValues];
+                if sampleIdx>2
+                    meanDiff = mean(abs(allParamMeans(sampleIdx,:)-allParamMeans(sampleIdx-1,:))./allParamMeans(sampleIdx-1,:));
+                    meanDiffSmall = meanDiff*100 < 0.1; % mean diff smaller than 0.1%
+                    allMeanDiffs = [allMeanDiffs;meanDiff*100];
+                    
+                    covDiff = mean(abs(allParamCovs{sampleIdx}-allParamCovs{sampleIdx-1})./(allParamCovs{sampleIdx-1}+eps), 'all');
+                    covDiffSmall = covDiff*100 < 0.1; % cov diff smaller than 0.1%
+                    allCovDiffs = [allCovDiffs;covDiff*100];
+                    
+                    if meanDiffSmall && covDiffSmall
+                        testedParameters(sampleIdx+1:end,:) = [];
+                        likelihoods(sampleIdx+1:end) = [];
+                        allSampledParams(allIdx+1:end,:) = [];
+                        allSampledLikelihoods(allIdx+1:end,:) = [];
+                        break;
+                    end
+                end
             end
+            allSampledParams(allIdx+1:end,:) = [];
+            allSampledLikelihoods(allIdx+1:end,:) = [];
         end
     end
     methods(Static)
