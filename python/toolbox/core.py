@@ -13,7 +13,7 @@ import h5py
 class DecayDataset(Dataset):
     """Decay dataset."""
 
-    def __init__(self, n_slopes_max=3, edcs_per_slope=50000, testset_flag=False, exactly_n_slopes_mode=False):
+    def __init__(self, n_slopes_max=3, edcs_per_slope=100000, testset_flag=False, exactly_n_slopes_mode=False):
         """
         Args:
         """

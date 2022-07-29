@@ -2,8 +2,8 @@ function datagen_syntheticEDCDataset_exactlyNSlopes(nSlopes, nEDCs)
 fs = 48000;
 L_EDC = 10; % seconds
 rtRange = [1, 15];
-minA = 10*log10(1e-3);
-noiseAmplitudeRange = [-14, -3];
+minA = -45;
+noiseAmplitudeRange = [-14, -2];
 
 %% Generate nEDCs EDCs with nSlopes slopes each
 edcs = zeros(nEDCs, 100);

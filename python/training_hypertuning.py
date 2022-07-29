@@ -18,8 +18,14 @@ import toolbox.utils as utils
 
 
 def objective(trial, args):
-    lr = trial.suggest_float('lr', 1e-5, 1e-2, log=True)
-    wd = trial.suggest_float('wd', 1e-5, 1e-2, log=True)
+    lr = trial.suggest_categorical("lr", [1e-5, 2e-5, 3e-5, 4e-5, 5e-5, 6e-5, 7e-5, 8e-5, 9e-5,
+                                          1e-4, 2e-4, 3e-4, 4e-4, 5e-4, 6e-4, 7e-4, 8e-4, 9e-4,
+                                          1e-3, 2e-3, 3e-3, 4e-3, 5e-3, 6e-3, 7e-3, 8e-3, 9e-3,
+                                          1e-2, 2e-2, 3e-2, 4e-2, 5e-2, 6e-2, 7e-2, 8e-2, 9e-2])
+    wd = trial.suggest_categorical("wd", [1e-5, 2e-5, 3e-5, 4e-5, 5e-5, 6e-5, 7e-5, 8e-5, 9e-5,
+                                          1e-4, 2e-4, 3e-4, 4e-4, 5e-4, 6e-4, 7e-4, 8e-4, 9e-4,
+                                          1e-3, 2e-3, 3e-3, 4e-3, 5e-3, 6e-3, 7e-3, 8e-3, 9e-3,
+                                          1e-2, 2e-2, 3e-2, 4e-2, 5e-2, 6e-2, 7e-2, 8e-2, 9e-2])
     cos_schedule_factor = trial.suggest_int('cos_sch', 1, 10)
     n_units_factor = 4  # trial.suggest_int('n_units_factor', 1, 5)
     n_filters_exp = 6  # trial.suggest_int('n_filter_exp', 4, 6)
@@ -122,8 +128,8 @@ if __name__ == '__main__':
                         help='input batch size for testing (default: 2048)')
     parser.add_argument('--n-slopes-max', type=int, default=3, metavar='smax',
                         help='maximum number of slopes to consider (default: 3)')
-    parser.add_argument('--edcs-per-slope', type=int, default=50000, metavar='S',
-                        help='number of edcs per slope in the dataset (default: 50000)')
+    parser.add_argument('--edcs-per-slope', type=int, default=100000, metavar='S',
+                        help='number of edcs per slope in the dataset (default: 10000)')
     parser.add_argument('--epochs', type=int, default=200, metavar='E',
                         help='number of epochs to train (default: 100)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',

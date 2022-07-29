@@ -47,7 +47,7 @@ if __name__ == '__main__':
         # Generate vector that specifies how many slopes are in every EDC
         n_slopes_groundtruth = torch.zeros((edcs.shape[0]))
         for slope_idx in range(1, 3 + 1):
-            n_slopes_groundtruth[(slope_idx - 1) * 50000:slope_idx * 50000] = slope_idx
+            n_slopes_groundtruth[(slope_idx - 1) * 100000:slope_idx * 100000] = slope_idx
         n_slopes_groundtruth = n_slopes_groundtruth.long()
 
         n_batches = 1000

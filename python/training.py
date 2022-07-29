@@ -172,8 +172,8 @@ def main():
                         help='input batch size for training (default: 2048)')
     parser.add_argument('--test-batch-size', type=int, default=2048, metavar='bs_t',
                         help='input batch size for testing (default: 2048)')
-    parser.add_argument('--edcs-per-slope', type=int, default=50000, metavar='S',
-                        help='number of edcs per slope in the dataset (default: 50000)')
+    parser.add_argument('--edcs-per-slope', type=int, default=100000, metavar='S',
+                        help='number of edcs per slope in the dataset (default: 100000)')
     parser.add_argument('--epochs', type=int, default=200, metavar='E',
                         help='number of epochs to train (default: 200)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
