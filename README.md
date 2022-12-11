@@ -11,7 +11,7 @@ The following toolboxes must be installed in order to run the MATLAB version of 
 - https://se.mathworks.com/matlabcentral/fileexchange/67296-deep-learning-toolbox-converter-for-onnx-model-format
 - Deep Learning Toolbox
 
-Furthermore, you must have at least MATLAB 2020b to run the toolbox.
+Furthermore, you must have at least MATLAB 2020b to run the toolbox. You will also need a Python installation on your machine, and you have to let MATLAB know where it is located, e.g. using ```pyversion(<your_python_path>)```.
 
 ## External dependencies (Python)
 The following toolboxes must be installed in order to run the Python version of the toolbox:
