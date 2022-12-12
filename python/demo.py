@@ -16,7 +16,7 @@ from toolbox.BayesianDecayAnalysis import BayesianDecayAnalysis
 # ===============================================================================
 # Parameters
 audio_path = os.path.join(Path(__file__).parent.parent.resolve(), 'data', 'exampleRIRs')
-rir_fname = '0001_1_sh_rirs.wav'  # First measurement
+rir_fname = 'doubleslope_0178_3_sh_rirs.wav'  # First measurement
 fadeout_length = 0  # in seconds
 
 n_slopes = 0  # 0 = number of active slopes is determined by network or bayesian analysis (between 1 and 3)
