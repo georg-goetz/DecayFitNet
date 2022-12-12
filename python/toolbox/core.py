@@ -333,24 +333,35 @@ def discard_last_n_percent(edc: torch.Tensor, n_percent: float) -> torch.Tensor:
     return out
 
 
-def discard_below(edc: torch.Tensor, threshold_val: float) -> torch.Tensor:
+def _discard_below(edc: torch.Tensor, threshold_val: float) -> torch.Tensor:
     # set all values below minimum to 0
     out = edc.detach().clone()
     out[out < threshold_val] = 0
 
-    out = discard_trailing_zeros(out)
+    out = _discard_trailing_zeros(out)
     return out
 
 
-def discard_trailing_zeros(rir: torch.Tensor) -> torch.Tensor:
-    out = rir.detach().clone()
-
+def _discard_trailing_zeros(rir: torch.Tensor) -> torch.Tensor:
     # find first non-zero element from back
-    last_above_thres = out.shape[-1] - torch.argmax((out.flip(-1) != 0).squeeze().int())
+    last_above_thres = rir.shape[-1] - torch.argmax((rir.flip(-1) != 0).squeeze().int())
 
     # discard from that sample onwards
-    out = out[..., :last_above_thres]
+    out = rir[..., :last_above_thres]
     return out
+
+
+def check_format(rir):
+    rir = torch.as_tensor(rir).detach().clone()
+
+    if len(rir.shape) == 1:
+        rir = rir.reshape(1, -1)
+
+    if rir.shape[0] > rir.shape[1]:
+        rir = torch.swapaxes(rir, 0, 1)
+        print(f'Swapped axes to bring rir into the format [{rir.shape[0]} x {rir.shape[1]}]. This should coincide '
+              f'with [n_channels x rir_length], which is the expected input format to the function you called.')
+    return rir
 
 
 class PreprocessRIR(nn.Module):
@@ -387,6 +398,7 @@ class PreprocessRIR(nn.Module):
         return self.filterbank.get_center_frequencies()
 
     def forward(self, input: torch.Tensor, input_is_edc: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
+        input = check_format(input)
         if len(input.shape) == 1:
             input = input.unsqueeze(1)
         if input.shape[0] > input.shape[-1]:
@@ -439,7 +451,10 @@ class PreprocessRIR(nn.Module):
         return schroeder_decays_db, time_axis, norm_vals, scale_adjust_factors
 
     def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        out = discard_trailing_zeros(rir)
+        # Check that RIR is in correct format/shape and return it in correct format if it wasn't before
+        rir = check_format(rir)
+
+        out = _discard_trailing_zeros(rir)
 
         # Filter
         out = self.filterbank(out)
