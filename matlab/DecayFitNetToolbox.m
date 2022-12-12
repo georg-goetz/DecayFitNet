@@ -62,6 +62,11 @@ classdef DecayFitNetToolbox < handle
             
             disp(obj.onnxModel)
             
+            pe = pyenv;
+            if isempty(pe.Version)
+                error('No Python installation found. Please install Python on your computer to use the DecayFitNet toolbox. You can tell MATLAB about your Python path with the command pyenv or similar.');
+            end
+            
             % Load input transform for preprocessing the network inputs
             fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
             obj.inputTransform = py.pickle.load(fid);
