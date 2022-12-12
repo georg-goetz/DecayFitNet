@@ -46,8 +46,8 @@ if fadeout_length > 0:
 
 # Init Preprocessing
 rir_preprocessing = PreprocessRIR(sample_rate=fs, filter_frequencies=filter_frequencies)
-# Schroeder integration
-true_edc, __ = rir_preprocessing.schroeder(rir)
+# Schroeder integration, analyse_full_rir: if RIR onset should be detected, set this to False
+true_edc, __ = rir_preprocessing.schroeder(rir, analyse_full_rir=True)
 time_axis = (torch.linspace(0, true_edc.shape[2] - 1, true_edc.shape[2]) / fs)
 # Permute into [n_bands, n_batches, n_samples]
 true_edc = true_edc.permute(1, 0, 2)
@@ -58,8 +58,8 @@ true_edc = true_edc.permute(1, 0, 2)
 # Prepare the model
 decayfitnet = DecayFitNetToolbox(n_slopes=n_slopes, sample_rate=fs, filter_frequencies=filter_frequencies)
 
-# Process
-estimated_parameters_decayfitnet, norm_vals_decayfitnet = decayfitnet.estimate_parameters(rir)
+# Process: analyse_full_rir: if RIR onset should be detected, set this to False
+estimated_parameters_decayfitnet, norm_vals_decayfitnet = decayfitnet.estimate_parameters(rir, analyse_full_rir=True)
 print('==== DecayFitNet: Estimated T values (in seconds, T=0 indicates an inactive slope): ====\n' +
       str(estimated_parameters_decayfitnet[0]))
 print('==== DecayFitNet: Estimated A values (linear scale, A=0 indicates an inactive slope): ====\n' +

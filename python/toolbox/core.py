@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchaudio.functional
 from torch.utils.data import Dataset
 import scipy
 import scipy.stats
@@ -364,6 +365,16 @@ def check_format(rir):
     return rir
 
 
+def rir_onset(rir):
+    spectrogram_trans = torchaudio.transforms.Spectrogram(n_fft=64, win_length=64, hop_length=4)
+    spectrogram = spectrogram_trans(rir)
+    windowed_energy = torch.sum(spectrogram, dim=len(spectrogram.shape)-2)
+    delta_energy = windowed_energy[..., 1:] / (windowed_energy[..., 0:-1]+1e-16)
+    highest_energy_change_window_idx = torch.argmax(delta_energy)
+    onset = int((highest_energy_change_window_idx-2) * 4 + 64)
+    return onset
+
+
 class PreprocessRIR(nn.Module):
     """ Preprocess a RIR to extract the EDC and prepare it for the neural network model.
         The preprocessing includes:
@@ -397,21 +408,17 @@ class PreprocessRIR(nn.Module):
     def get_filter_frequencies(self):
         return self.filterbank.get_center_frequencies()
 
-    def forward(self, input: torch.Tensor, input_is_edc: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
-        input = check_format(input)
-        if len(input.shape) == 1:
-            input = input.unsqueeze(1)
-        if input.shape[0] > input.shape[-1]:
-            input = input.swapaxes(0, -1)
+    def forward(self, input_rir: torch.Tensor, input_is_edc: bool = False, analyse_full_rir=True) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
+        input_rir = check_format(input_rir)
 
         if input_is_edc:
-            norm_vals = torch.max(input, dim=-1, keepdim=True).values  # per channel
-            schroeder_decays = input / norm_vals
-            if len(input.shape) == 2:
+            norm_vals = torch.max(input_rir, dim=-1, keepdim=True).values  # per channel
+            schroeder_decays = input_rir / norm_vals
+            if len(input_rir.shape) == 2:
                 schroeder_decays = schroeder_decays.unsqueeze(1)
         else:
             # Extract decays from RIR: Do backwards integration
-            schroeder_decays, norm_vals = self.schroeder(input)
+            schroeder_decays, norm_vals = self.schroeder(input_rir, analyse_full_rir=analyse_full_rir)
 
         # Convert to dB
         schroeder_decays_db = 10 * torch.log10(schroeder_decays + self.eps)
@@ -450,9 +457,13 @@ class PreprocessRIR(nn.Module):
 
         return schroeder_decays_db, time_axis, norm_vals, scale_adjust_factors
 
-    def schroeder(self, rir: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def schroeder(self, rir: torch.Tensor, analyse_full_rir=True) -> Tuple[torch.Tensor, torch.Tensor]:
         # Check that RIR is in correct format/shape and return it in correct format if it wasn't before
         rir = check_format(rir)
+
+        if not analyse_full_rir:
+            onset = rir_onset(rir)
+            rir = rir[..., onset:]
 
         out = _discard_trailing_zeros(rir)
 

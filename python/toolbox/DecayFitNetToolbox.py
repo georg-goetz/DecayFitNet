@@ -74,12 +74,12 @@ class DecayFitNetToolbox:
     def get_output_size(self):
         return self._preprocess.output_size
 
-    def preprocess(self, signal: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def preprocess(self, signal: torch.Tensor, analyse_full_rir=True) -> Tuple[torch.Tensor, torch.Tensor]:
         """Preprocess an input signal to extract EDCs"""
-        edcs, norm_vals = self._preprocess(signal)
+        edcs, norm_vals = self._preprocess(signal, analyse_full_rir)
         return edcs, norm_vals
 
-    def estimate_parameters(self, input: torch.Tensor, input_is_edc: bool = False) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    def estimate_parameters(self, input: torch.Tensor, input_is_edc: bool = False, analyse_full_rir=True) -> Tuple[List[torch.Tensor], torch.Tensor]:
         """ Estimates the parameters for this impulse response. The resulting fitted EDC is normalized to 0dB and can be
         re-normalized to the original level with norm_vals
 
@@ -97,7 +97,7 @@ class DecayFitNetToolbox:
                                               but if the initial level is required, norm_vals will return it
 
         """
-        edcs, __, norm_vals, scale_adjust_factors = self._preprocess(input, input_is_edc)
+        edcs, __, norm_vals, scale_adjust_factors = self._preprocess(input, input_is_edc, analyse_full_rir)
 
         ort_inputs = {self._session.get_inputs()[0].name: DecayFitNetToolbox._to_numpy(edcs)}
         ort_outs = self._session.run(None, ort_inputs)
