@@ -46,6 +46,11 @@ classdef DecayFitNetToolbox < handle
             
             obj.networkName = sprintf('DecayFitNet_%s', slopeMode);
             
+            pe = pyenv;
+            if strcmp(pe.Version, "") || isempty(pe.Version)
+                error(sprintf("MATLAB does not know where your Python executable is located. \n Please run pyenv('Version', <path_to_your_python_executable>). \n\n More info: https://www.mathworks.com/help/releases/R2022a/matlab/matlab_external/install-supported-python-implementation.html"));
+            end
+
             % Load ONNX model:
             if exist(fullfile(obj.onnxPath, [obj.networkName, 'model.mat']), 'file')
                 fprintf('Loading precompiled model %smodel.mat\n', obj.networkName)
@@ -61,11 +66,6 @@ classdef DecayFitNetToolbox < handle
             end
             
             disp(obj.onnxModel)
-            
-            pe = pyenv;
-            if isempty(pe.Version)
-                error('No Python installation found. Please install Python on your computer to use the DecayFitNet toolbox. You can tell MATLAB about your Python path with the command pyenv or similar.');
-            end
             
             % Load input transform for preprocessing the network inputs
             fid = py.open(fullfile(obj.onnxPath, sprintf('input_transform_%sp2.pkl', slopeMode)),'rb');
