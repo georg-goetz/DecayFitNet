@@ -20,7 +20,7 @@ end
 
 irFlipped = flipud(rir(1:upperLim,:)); % flip, because of backwards integration
 irSquared = irFlipped.^2;
-irIntegrated = (1/length(rir)) * cumsum(irSquared); % integrate with trapezoids
+irIntegrated = cumsum(irSquared); % integrate with cumulative sum
 decay = flipud(irIntegrated); % flip again, so that decay is right way around, and get rid of 0 value (would throw error when calculating log)
 
 end

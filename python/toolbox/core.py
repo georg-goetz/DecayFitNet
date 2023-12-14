@@ -475,7 +475,7 @@ class PreprocessRIR(nn.Module):
 
         # Backwards integral
         out = torch.flip(out, [2])
-        out = (1 / out.shape[2]) * torch.cumsum(out ** 2, 2)
+        out = torch.cumsum(out ** 2, 2)
         out = torch.flip(out, [2])
 
         # Normalize to 1
