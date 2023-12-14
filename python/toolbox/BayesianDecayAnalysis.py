@@ -31,7 +31,7 @@ def evaluate_likelihood(true_edc_db, t_vals, a_vals, n_val, time_axis):
 class BayesianDecayAnalysis:
     def __init__(self, n_slopes: int = 0, sample_rate: int = 48000, parameter_ranges: dict = None,
                  n_iterations: int = 50, filter_frequencies: List = None):
-        self._version = '0.1.0'
+        self._version = '0.1.2'
         self._n_slopes = n_slopes
         self._n_points_per_dim = 100
         self.n_iterations = n_iterations

@@ -3,7 +3,7 @@ classdef DecayFitNetToolbox < handle
     properties        
     end
     properties (SetAccess = private)
-        version = '0.1.0'
+        version = '0.1.2'
         outputSize = 100  % Timesteps of resampled RIRs
         nSlopes
         onnxPath

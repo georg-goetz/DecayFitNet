@@ -17,7 +17,7 @@
 % Georg Götz, October 2023, Aalto University, georg.gotz@aalto.fi
 classdef ibicBasedDecayFitNet < handle
     properties (SetAccess = private)
-        version = '0.1.0'
+        version = '0.1.2'
         outputSize = 100  % Timesteps of resampled RIRs
         maxOrder
         sampleRate

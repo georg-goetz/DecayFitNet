@@ -7,7 +7,7 @@ classdef BayesianDecayAnalysis < handle
         nSlopes
     end
     properties (SetAccess = private)
-        version = '0.1.0'
+        version = '0.1.2'
         sampleRate
         outputSize = 100  % Timesteps of resampled RIRs
         preprocessing

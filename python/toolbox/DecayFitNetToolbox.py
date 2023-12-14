@@ -13,7 +13,7 @@ from .core import PreprocessRIR, _postprocess_parameters
 class DecayFitNetToolbox:
     def __init__(self, n_slopes: int = 0, sample_rate: int = 48000, filter_frequencies: List = None,
                  device: torch.device = torch.device('cpu')):
-        self._version = '0.1.0'
+        self._version = '0.1.2'
         self.device = device
 
         self._n_slopes = n_slopes
