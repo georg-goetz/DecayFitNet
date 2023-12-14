@@ -1,4 +1,4 @@
-# Demo for the DecayFitNet Toolbox
+# Demo for decay analysis using the DecayFitNet Toolbox
 
 import torch
 import numpy as np

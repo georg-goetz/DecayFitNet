@@ -609,3 +609,75 @@ def generate_synthetic_edc_np(t_vals, a_vals, noise_level, time_axis, compensate
 
     edc_model = np.concatenate((exponentials, noise), value_dim)
     return edc_model
+
+
+def schroeder_to_envelope(schroeder_T, schroeder_A, fs):
+    assert schroeder_T.shape == schroeder_A.shape, 'Dimensions mismatch between T and A.'
+    assert np.any(schroeder_T.shape == schroeder_A.shape), 'modelT and modelA have different sizes.'
+
+    # Go from decay time (~T60) to decay rate of exp(-decayRate*t) with t being
+    # time in samples
+    decay_rate = decay_time_to_decay_rate(schroeder_T, fs)
+
+    # Exponential exp(-decayRate*t) = [exp(-decayRate)]^t = decayPerSample^t
+    decay_per_sample = np.exp(-decay_rate)
+
+    # Use geometric sum to calculate sum_t=0^inf {decayPerSample^t}
+    decay_energy = 1 / (1 - decay_per_sample)
+
+    # We want sum_t=0^inf {gaussianNoise(t) * envelope(t) * scaling} = 1, so we
+    # can scale the decay model amplitudes with scaling. Gaussian noise has
+    # RMS=1, so we can ignore it.
+    scaling = np.sqrt(1 / decay_energy)
+    envelope_A = np.sqrt(schroeder_A) * scaling
+
+    envelope_T = schroeder_T_to_envelope_T(schroeder_T)
+    return envelope_T, envelope_A
+
+
+def decay_kernel(t_vals, time_axis):
+    if len(t_vals.shape) == 2:
+        if t_vals.shape[0] > t_vals.shape[1]:
+            t_vals = t_vals.T  # should be row vector
+    elif len(t_vals.shape) == 1:
+        t_vals = t_vals[np.newaxis, :]
+    else:
+        raise ValueError('Dimensions of tVals are unsupported.')
+
+    if len(time_axis.shape) == 1:
+        time_axis = time_axis[:, np.newaxis]
+    elif len(time_axis.shape) == 2:
+        if time_axis.shape[1] > time_axis.shape[0]:
+            time_axis = time_axis.T  # should be column vector
+    else:
+        raise ValueError('Dimensions of timeAxis are unsupported.')
+
+    # Calculate decay rates, based on the requirement that after T60 seconds, the level must drop to -60dB
+    tau_vals = np.log(1e6) / t_vals
+
+    # Calculate exponentials from decay rates
+    time_vals = -time_axis * tau_vals
+    exponentials = np.exp(time_vals)
+
+    # Calculate noise
+    L = len(time_axis)
+    noise = np.linspace(1, 1/L, L)
+
+    # Assemble decay kernel
+    D = np.column_stack((exponentials, noise))
+    return D
+
+
+def decay_time_to_decay_rate(decay_time, fs):
+    # Convert between exp((-13.8*t)/(fs*decayTime)) and exp(-decayRate*t) with
+    # t being time in samples
+    decay_rate = np.log(1e6) / (decay_time * fs)
+    return decay_rate
+
+
+def schroeder_T_to_envelope_T(schroeder_T):
+    assert len(schroeder_T.shape) == 1, 'modelT must be a row vector.'
+    # Envelope is in linear scale, not quadratic, therefore decay rates halve,
+    # and T values double
+    envelope_T = 2 * schroeder_T
+    return envelope_T

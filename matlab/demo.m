@@ -1,6 +1,4 @@
 close all; clear variables; clc; lastwarn('');
-%% External dependencies
-
 %% Parameters
 audioPath = '../data/exampleRIRs';  %local path
 rirFName = 'doubleslope_RIR_200cm.wav';
